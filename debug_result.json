@@ -1,0 +1,20 @@
+{
+  "cpu": "12.8%",
+  "cpuUsage": 12.8,
+  "memory": {
+    "total": "7.7Gi",
+    "used": "3.1Gi",
+    "free": "226Mi",
+    "percent": "40.3%"
+  },
+  "memoryUsage": 40.3,
+  "disk": {
+    "total": "150G",
+    "used": "55G",
+    "free": "89G",
+    "percent": "39%"
+  },
+  "diskUsage": 39,
+  "uptime": "up 19 weeks, 4 hours, 38 minutes",
+  "loadAvg": "0.81 0.60 0.35"
+}
