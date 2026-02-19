@@ -26,7 +26,10 @@ const serverStatsSchema = new Schema<IServerStats>(
   },
 );
 
-// TTL Index: Delete documents after 24 hours (86400 seconds)
+// TTL Index: Delete documents after 24 hours
 serverStatsSchema.index({ timestamp: 1 }, { expireAfterSeconds: 86400 });
+
+// Compound Index: Efficiently fetch stats for a specific server sorted by time
+serverStatsSchema.index({ server: 1, timestamp: -1 });
 
 export default mongoose.model<IServerStats>("ServerStats", serverStatsSchema);
