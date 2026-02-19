@@ -754,12 +754,55 @@ class DeployService {
         // Step 6: Start
         if (project.startCommand) {
           await this.updateStatus(deploymentId, "starting", pid);
-          emitDeployLog(deploymentId, `🚀 Starting...`, "info", pid);
+          emitDeployLog(
+            deploymentId,
+            `🚀 Starting: ${project.startCommand}`,
+            "info",
+            pid,
+          );
+
+          const logFile = `/tmp/deploy-${deploymentId}.log`;
+          // 1. Start process in background
           await sshService.exec(
             serverId,
-            `cd ${workDir} && nohup ${project.startCommand} > /tmp/deploy-${deploymentId}.log 2>&1 &`,
+            `cd ${workDir} && nohup ${project.startCommand} > ${logFile} 2>&1 & echo $! > "${workDir}/.deploy.pid"`,
           );
-          emitDeployLog(deploymentId, "✅ Service started!", "success", pid);
+
+          // 2. Stream logs for 10 seconds to show startup progress
+          emitDeployLog(
+            deploymentId,
+            "📋 Tailing logs for 10s...",
+            "info",
+            pid,
+          );
+          try {
+            // "timeout 10s tail -f" will exit after 10s.
+            // We use sshService.exec but we need to handle the stream if possible.
+            // Currently sshService.exec returns ALL output at once after it finishes.
+            // So this will block for 10s, then dump 10s of logs.
+            // Better than nothing. Ideally we would want real-time streaming,
+            // but that requires changing sshService to invoke a callback on data.
+            // For now, let's block for 5s to check for immediate errors.
+            const tailResult = await sshService.exec(
+              serverId,
+              `timeout 5s tail -f ${logFile} || true`,
+            );
+            if (tailResult.stdout) {
+              const lines = tailResult.stdout.split("\n");
+              lines.forEach((line) => {
+                if (line.trim()) emitDeployLog(deploymentId, line, "info", pid);
+              });
+            }
+          } catch (e) {
+            // Ignore tail errors (e.g. timeout kills it)
+          }
+
+          emitDeployLog(
+            deploymentId,
+            "✅ Service started (background)!",
+            "success",
+            pid,
+          );
         }
 
         await this.updateStatus(deploymentId, "running", pid);

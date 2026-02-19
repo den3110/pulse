@@ -111,6 +111,7 @@ export const createProject = async (
       healthCheckUrl,
       healthCheckInterval,
       repoFolder,
+      buildOutputDir,
     } = req.body;
 
     const webhookSecret = crypto.randomBytes(32).toString("hex");
@@ -122,9 +123,10 @@ export const createProject = async (
       server,
       deployPath,
       outputPath: outputPath || "",
-      buildCommand: buildCommand || "npm install && npm run build",
-      installCommand: installCommand || "npm install",
-      startCommand: startCommand || "npm start",
+      buildOutputDir: buildOutputDir || "",
+      buildCommand,
+      installCommand,
+      startCommand,
       stopCommand: stopCommand || "",
       preDeployCommand: preDeployCommand || "",
       postDeployCommand: postDeployCommand || "",
