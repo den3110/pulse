@@ -327,6 +327,21 @@ class PM2Service {
     );
     return result.stdout || "";
   }
+
+  /**
+   * Stream logs for a process (Real-time)
+   * Returns the SSH stream object which effectively is the connection.
+   */
+  async streamLogs(serverId: string, nameOrId: string): Promise<any> {
+    const stream = await sshService.createShell(serverId, {
+      term: "xterm-color",
+    });
+
+    // Command to start logging
+    stream.write(`pm2 logs "${nameOrId}" --lines 20 --raw\n`);
+
+    return stream;
+  }
 }
 
 export default new PM2Service();

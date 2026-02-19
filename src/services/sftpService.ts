@@ -135,10 +135,6 @@ class SFTPService {
     return `${owner}${group}${other}`;
   }
 
-  /* ── Short-lived directory listing cache (3 s) ── */
-  private dirCache = new Map<string, { entries: FileEntry[]; ts: number }>();
-  private readonly DIR_CACHE_TTL = 3000;
-
   /**
    * List directory contents — uses fast SSH `ls` instead of slow SFTP readdir
    */
@@ -147,12 +143,6 @@ class SFTPService {
     dirPath: string,
     type?: "directory" | "file",
   ): Promise<FileEntry[]> {
-    const cacheKey = `${serverId}:${dirPath}:${type || "all"}`;
-    const cached = this.dirCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < this.DIR_CACHE_TTL) {
-      return cached.entries;
-    }
-
     let command = `ls -la --time-style=full-iso '${dirPath.replace(
       /'/g,
       "'\\''",
@@ -219,7 +209,6 @@ class SFTPService {
       return a.name.localeCompare(b.name);
     });
 
-    this.dirCache.set(cacheKey, { entries, ts: Date.now() });
     return entries;
   }
 

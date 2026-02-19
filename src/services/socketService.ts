@@ -11,7 +11,7 @@ const terminalStreams = new Map<string, any>();
 export const initSocket = (server: any): IOServer => {
   io = new IOServer(server, {
     cors: {
-      origin: config.clientUrl,
+      origin: [config.clientUrl, ...config.allowedOrigins],
       methods: ["GET", "POST"],
       credentials: true,
     },
@@ -81,57 +81,113 @@ export const initSocket = (server: any): IOServer => {
     socket.on("disconnect", () => {
       console.log(`[Socket] Client disconnected: ${socket.id}`);
       // Clean up any active terminal sessions for this socket
+      // Clean up any active terminal sessions for this socket
       if (terminalStreams.has(socket.id)) {
-        const stream = terminalStreams.get(socket.id);
-        stream.end();
+        const clientStreams = terminalStreams.get(socket.id);
+        clientStreams.forEach((stream: any) => stream.end());
+        clientStreams.clear();
         terminalStreams.delete(socket.id);
       }
     });
 
     // --- Terminal Events ---
 
-    socket.on("terminal:start", async ({ serverId, rows, cols }) => {
+    socket.on("terminal:start", async ({ serverId, termId, rows, cols }) => {
       try {
-        // Clean up existing session if any
-        if (terminalStreams.has(socket.id)) {
-          const stream = terminalStreams.get(socket.id);
+        // Initialize map for this socket if needed
+        if (!terminalStreams.has(socket.id)) {
+          terminalStreams.set(socket.id, new Map<number, any>());
+        }
+        const clientStreams = terminalStreams.get(socket.id);
+
+        // Clean up existing session for this specific prompt IF it exists
+        // (This handles refreshing the tab or re-mounting same termId)
+        if (clientStreams.has(termId)) {
+          const stream = clientStreams.get(termId);
+          // IMPORTANT: Remove listeners to prevent "close" event from emitting "terminal:exit"
+          // because we are intentionally replacing this session.
+          stream.removeAllListeners("close");
           stream.end();
-          terminalStreams.delete(socket.id);
+          clientStreams.delete(termId);
         }
 
         const stream = await sshService.createShell(serverId, { rows, cols });
-        terminalStreams.set(socket.id, stream);
+        clientStreams.set(termId, stream);
+
+        // Notify client that terminal is ready for input
+        socket.emit("terminal:ready", { termId });
 
         stream.on("data", (data: Buffer) => {
-          socket.emit("terminal:output", data.toString("utf-8"));
+          socket.emit("terminal:output", {
+            termId,
+            data: data.toString("utf-8"),
+          });
+        });
+
+        stream.on(
+          "exit",
+          (code: any, signal: any, coreDump: any, desc: any) => {
+            let msg = `\r\n\x1b[33m[Process completed`;
+            if (code !== undefined) msg += ` with code ${code}`;
+            if (signal) msg += ` (Signal: ${signal})`;
+            if (desc) msg += ` - ${desc}`;
+            msg += `]\x1b[0m\r\n`;
+
+            socket.emit("terminal:output", {
+              termId,
+              data: msg,
+            });
+          },
+        );
+
+        stream.on("error", (err: any) => {
+          socket.emit("terminal:output", {
+            termId,
+            data: `\r\n\x1b[31m[Error: ${err.message}]\x1b[0m\r\n`,
+          });
         });
 
         stream.on("close", () => {
-          socket.emit("terminal:exit");
-          terminalStreams.delete(socket.id);
+          socket.emit("terminal:exit", { termId });
+          if (terminalStreams.has(socket.id)) {
+            terminalStreams.get(socket.id).delete(termId);
+          }
         });
-
-        // Send initial ready signal?
-        // socket.emit("terminal:ready");
       } catch (error: any) {
-        socket.emit(
-          "terminal:output",
-          `\r\nConnection failed: ${error.message}\r\n`,
-        );
+        socket.emit("terminal:output", {
+          termId,
+          data: `\r\nConnection failed: ${error.message}\r\n`,
+        });
       }
     });
 
-    socket.on("terminal:data", (data) => {
-      const stream = terminalStreams.get(socket.id);
-      if (stream) {
-        stream.write(data);
+    socket.on("terminal:data", ({ termId, data }) => {
+      if (terminalStreams.has(socket.id)) {
+        const clientStreams = terminalStreams.get(socket.id);
+        if (clientStreams.has(termId)) {
+          clientStreams.get(termId).write(data);
+        }
       }
     });
 
-    socket.on("terminal:resize", ({ rows, cols }) => {
-      const stream = terminalStreams.get(socket.id);
-      if (stream) {
-        stream.setWindow(rows, cols, 0, 0);
+    socket.on("terminal:resize", ({ termId, rows, cols }) => {
+      if (terminalStreams.has(socket.id)) {
+        const clientStreams = terminalStreams.get(socket.id);
+        if (clientStreams.has(termId)) {
+          clientStreams.get(termId).setWindow(rows, cols, 0, 0);
+        }
+      }
+    });
+
+    socket.on("terminal:close", ({ termId }) => {
+      if (terminalStreams.has(socket.id)) {
+        const clientStreams = terminalStreams.get(socket.id);
+        if (clientStreams.has(termId)) {
+          const stream = clientStreams.get(termId);
+          stream.removeAllListeners("close"); // No need to notify client of exit if client requested close
+          stream.end();
+          clientStreams.delete(termId);
+        }
       }
     });
   });

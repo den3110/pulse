@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import http from "http";
 import config from "./config";
 import { initSocket } from "./services/socketService";
+import portRoutes from "./routes/portRoutes"; // Added import
 import schedulerService from "./services/schedulerService";
 import gitPollingService from "./services/gitPollingService";
 import healthCheckService from "./services/healthCheckService";
@@ -45,7 +46,8 @@ app.use(
         origin.match(/^http:\/\/localhost/) ||
         origin.match(/^http:\/\/192\.168\./) ||
         origin.match(/^http:\/\/172\./) || // Docker/VPN
-        origin === config.clientUrl
+        origin === config.clientUrl ||
+        config.allowedOrigins.includes(origin)
       ) {
         return callback(null, true);
       }
@@ -83,6 +85,7 @@ app.use("/api/activity", activityRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/ftp", ftpRoutes);
 app.use("/api/database", databaseRoutes);
+app.use("/api/ports", portRoutes);
 
 // Health check
 app.get("/api/health", (_req, res) => {

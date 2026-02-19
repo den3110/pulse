@@ -200,3 +200,55 @@ export const stopAll = async (
     res.status(500).json({ message: error.message });
   }
 };
+
+export const streamLogs = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  const { serverId, name } = req.params;
+
+  // SSE Headers
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  try {
+    const stream = await pm2Service.streamLogs(
+      serverId as string,
+      name as string,
+    );
+
+    // Forward logs to client
+    stream.on("data", (data: Buffer) => {
+      const lines = data.toString().split("\n");
+      lines.forEach((line) => {
+        if (line.trim()) {
+          res.write(`data: ${JSON.stringify({ log: line })}\n\n`);
+        }
+      });
+    });
+
+    stream.on("error", (err: any) => {
+      res.write(
+        `data: ${JSON.stringify({ log: `Error: ${err.message}`, type: "error" })}\n\n`,
+      );
+      res.end();
+    });
+
+    stream.on("close", () => {
+      res.end();
+    });
+
+    // Cleanup on client disconnect
+    req.on("close", () => {
+      stream.end(); // Close SSH connection
+    });
+  } catch (error: any) {
+    res.write(
+      `data: ${JSON.stringify({ log: `Failed to start stream: ${error.message}`, type: "error" })}\n\n`,
+    );
+    res.end();
+  }
+};

@@ -51,6 +51,7 @@ router.post("/:serverId/:name/restart", pm2Controller.restartProcess);
 router.post("/:serverId/:name/reload", pm2Controller.reloadProcess);
 router.post("/:serverId/:name/delete", pm2Controller.deleteProcess);
 router.get("/:serverId/:name/logs", pm2Controller.getLogs);
+router.get("/:serverId/:name/logs/stream", pm2Controller.streamLogs);
 router.post("/:serverId/:name/flush", pm2Controller.flushLogs);
 
 export default router;

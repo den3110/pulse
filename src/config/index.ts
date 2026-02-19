@@ -9,4 +9,8 @@ export default {
   jwtExpire: process.env.JWT_EXPIRE || "15m",
   jwtRefreshExpire: process.env.JWT_REFRESH_EXPIRE || "7d",
   clientUrl: process.env.CLIENT_URL || "http://localhost:5173",
+  allowedOrigins: (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter((o) => o),
 };

@@ -242,7 +242,49 @@ class SSHService {
   }
 
   /**
-   * Create an interactive shell session
+   * Execute a command and stream output line-by-line
+   */
+  async execStreamLine(
+    serverId: string,
+    command: string,
+    onLine: (line: string, type: "stdout" | "stderr") => void,
+    onClose?: (code: number) => void,
+  ): Promise<void> {
+    let stdoutBuffer = "";
+    let stderrBuffer = "";
+
+    return this.execStream(
+      serverId,
+      command,
+      (data, type) => {
+        if (type === "stdout") {
+          stdoutBuffer += data;
+          const lines = stdoutBuffer.split("\n");
+          // Keep the last partial line in buffer
+          stdoutBuffer = lines.pop() || "";
+          lines.forEach((line) => {
+            if (line.trim()) onLine(line, "stdout");
+          });
+        } else {
+          stderrBuffer += data;
+          const lines = stderrBuffer.split("\n");
+          stderrBuffer = lines.pop() || "";
+          lines.forEach((line) => {
+            if (line.trim()) onLine(line, "stderr");
+          });
+        }
+      },
+      (code) => {
+        // Flush remaining buffers
+        if (stdoutBuffer.trim()) onLine(stdoutBuffer, "stdout");
+        if (stderrBuffer.trim()) onLine(stderrBuffer, "stderr");
+        if (onClose) onClose(code);
+      },
+    );
+  }
+
+  /**
+   * Create an interactive shell session (Dedicated Connection)
    */
   async createShell(
     serverId: string,
@@ -252,9 +294,16 @@ class SSHService {
       term?: string;
     } = {},
   ): Promise<any> {
-    try {
-      const conn = await this.getOrCreateConnection(serverId);
-      return new Promise((resolve, reject) => {
+    const server = await Server.findById(serverId).select(
+      "+password +privateKey +passphrase",
+    );
+    if (!server) throw new Error("Server not found");
+
+    return new Promise((resolve, reject) => {
+      const conn = new Client();
+      const connectConfig = this.getConnectConfig(server);
+
+      conn.on("ready", () => {
         conn.shell(
           {
             term: options.term || "xterm-color",
@@ -262,17 +311,32 @@ class SSHService {
             cols: options.cols || 80,
           },
           (err, stream) => {
-            if (err) return reject(err);
+            if (err) {
+              conn.end();
+              return reject(err);
+            }
+
+            // Should close connection when stream closes
+            stream.on("close", () => {
+              conn.end();
+            });
+
             resolve(stream);
           },
         );
       });
-    } catch (error: any) {
-      console.error(
-        `[SSH] Failed to create shell for server ${serverId}: ${error.message}`,
-      );
-      throw error;
-    }
+
+      conn.on("error", (err) => {
+        console.error(`[SSH] Dedicated shell connection error: ${err.message}`);
+        reject(new Error(`SSH connection failed: ${err.message}`));
+      });
+
+      conn.on("end", () => {
+        // Connection ended
+      });
+
+      conn.connect(connectConfig);
+    });
   }
 
   /**
@@ -425,6 +489,18 @@ class SSHService {
         loadAvg: "0 0 0",
       };
     }
+  }
+  /**
+   * Request an SFTP channel on the existing connection
+   */
+  async requestSFTP(serverId: string): Promise<any> {
+    const conn = await this.getOrCreateConnection(serverId);
+    return new Promise((resolve, reject) => {
+      conn.sftp((err, sftp) => {
+        if (err) return reject(err);
+        resolve(sftp);
+      });
+    });
   }
 }
 

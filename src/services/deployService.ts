@@ -296,12 +296,93 @@ class DeployService {
           "info",
           pid,
         );
-        // Use nohup to keep process running after SSH disconnect, save PID
-        await sshService.exec(
-          serverId,
-          `cd ${workDir} && nohup ${project.startCommand} > /tmp/deploy-${deploymentId}.log 2>&1 & echo $! > "${workDir}/.deploy.pid"`,
-        );
-        emitDeployLog(deploymentId, "✅ Service started!", "success", pid);
+
+        if (project.processManager === "pm2") {
+          // PM2 Logic
+          const pm2Name = project.name;
+          emitDeployLog(
+            deploymentId,
+            `⚡ Using PM2 to manage process: ${pm2Name}`,
+            "info",
+            pid,
+          );
+
+          // 1. Delete existing process if any
+          try {
+            await sshService.exec(serverId, `pm2 delete "${pm2Name}"`);
+          } catch {}
+
+          // 2. Start new process
+          // pm2 start "npm start" --name "my-project" --cwd "/path/to/repo"
+          await sshService.exec(
+            serverId,
+            `pm2 start "${project.startCommand}" --name "${pm2Name}" --cwd "${workDir}"`,
+          );
+
+          // 3. Save PM2 list
+          await sshService.exec(serverId, "pm2 save");
+
+          // 4. Verify PM2 process
+          try {
+            await sshService.exec(serverId, `pm2 show "${pm2Name}"`);
+          } catch (e) {
+            throw new Error("Service failed to start (PM2 process not found)");
+          }
+
+          emitDeployLog(
+            deploymentId,
+            "✅ Service started with PM2!",
+            "success",
+            pid,
+          );
+        } else {
+          // Default nohup Logic
+          const logFile = `/tmp/deploy-${deploymentId}.log`;
+          // Use nohup to keep process running after SSH disconnect, save PID
+          // Use < /dev/null and ( ... ) & to ensure efficient detachment
+          await sshService.exec(
+            serverId,
+            `cd ${workDir} && (nohup ${project.startCommand} > ${logFile} 2>&1 < /dev/null & echo $! > "${workDir}/.deploy.pid")`,
+          );
+
+          // Stream logs for 10 seconds to show startup progress
+          emitDeployLog(
+            deploymentId,
+            "📋 Tailing logs for 10s...",
+            "info",
+            pid,
+          );
+          try {
+            // tail -n +1 -f: Start from line 1 and follow. Ensures we don't miss initial output.
+            await sshService.execStreamLine(
+              serverId,
+              `timeout 10s tail -n +1 -f ${logFile} || true`,
+              (line) => {
+                if (line.trim()) emitDeployLog(deploymentId, line, "info", pid);
+              },
+            );
+          } catch (e) {
+            // Ignore tail errors (e.g. timeout kills it)
+          }
+
+          // 3. Verify process is still alive
+          try {
+            const pidCheck = await sshService.exec(
+              serverId,
+              `if [ -f "${workDir}/.deploy.pid" ] && kill -0 $(cat "${workDir}/.deploy.pid") 2>/dev/null; then echo "ALIVE"; else echo "DEAD"; fi`,
+            );
+
+            if (pidCheck.stdout.trim() !== "ALIVE") {
+              throw new Error(
+                "Service failed to start (process died immediately)",
+              );
+            }
+          } catch (e: any) {
+            throw new Error(`Service failed to start: ${e.message}`);
+          }
+
+          emitDeployLog(deploymentId, "✅ Service started!", "success", pid);
+        }
       }
 
       // Post-deploy hook
@@ -466,12 +547,12 @@ class DeployService {
       ? `bash -c 'if [ -d "${deployPath}" ]; then echo $$ > "${deployPath}/.deploy.running.pid"; fi && ${command.replace(/'/g, "'\\''")}'`
       : command;
 
-    await sshService.execStream(
+    await sshService.execStreamLine(
       serverId,
       wrappedCommand,
-      (data, type) => {
+      (line, type) => {
         const logType = type === "stderr" ? "warning" : "info";
-        emitDeployLog(deploymentId, data, logType as any, projectId);
+        emitDeployLog(deploymentId, line, logType as any, projectId);
       },
       (code) => {
         exitCode = code;
@@ -578,11 +659,18 @@ class DeployService {
           `cd ${workDir} && ${project.stopCommand}`,
         );
       }
-      // Kill by PID file (always try as fallback)
-      await sshService.exec(
-        serverId,
-        `if [ -f "${workDir}/.deploy.pid" ]; then kill $(cat "${workDir}/.deploy.pid") 2>/dev/null; rm -f "${workDir}/.deploy.pid"; fi`,
-      );
+
+      if (project.processManager === "pm2") {
+        // PM2 Stop
+        await sshService.exec(serverId, `pm2 delete "${project.name}"`);
+        await sshService.exec(serverId, "pm2 save");
+      } else {
+        // Kill by PID file (always try as fallback)
+        await sshService.exec(
+          serverId,
+          `if [ -f "${workDir}/.deploy.pid" ]; then kill $(cat "${workDir}/.deploy.pid") 2>/dev/null; rm -f "${workDir}/.deploy.pid"; fi`,
+        );
+      }
     } catch (e) {
       // Ignore errors — process might not be running
     }
@@ -761,48 +849,95 @@ class DeployService {
             pid,
           );
 
-          const logFile = `/tmp/deploy-${deploymentId}.log`;
-          // 1. Start process in background
-          await sshService.exec(
-            serverId,
-            `cd ${workDir} && nohup ${project.startCommand} > ${logFile} 2>&1 & echo $! > "${workDir}/.deploy.pid"`,
-          );
-
-          // 2. Stream logs for 10 seconds to show startup progress
-          emitDeployLog(
-            deploymentId,
-            "📋 Tailing logs for 10s...",
-            "info",
-            pid,
-          );
-          try {
-            // "timeout 10s tail -f" will exit after 10s.
-            // We use sshService.exec but we need to handle the stream if possible.
-            // Currently sshService.exec returns ALL output at once after it finishes.
-            // So this will block for 10s, then dump 10s of logs.
-            // Better than nothing. Ideally we would want real-time streaming,
-            // but that requires changing sshService to invoke a callback on data.
-            // For now, let's block for 5s to check for immediate errors.
-            const tailResult = await sshService.exec(
-              serverId,
-              `timeout 5s tail -f ${logFile} || true`,
+          if (project.processManager === "pm2") {
+            // PM2 Logic
+            const pm2Name = project.name;
+            emitDeployLog(
+              deploymentId,
+              `⚡ Using PM2 to manage process: ${pm2Name}`,
+              "info",
+              pid,
             );
-            if (tailResult.stdout) {
-              const lines = tailResult.stdout.split("\n");
-              lines.forEach((line) => {
-                if (line.trim()) emitDeployLog(deploymentId, line, "info", pid);
-              });
-            }
-          } catch (e) {
-            // Ignore tail errors (e.g. timeout kills it)
-          }
 
-          emitDeployLog(
-            deploymentId,
-            "✅ Service started (background)!",
-            "success",
-            pid,
-          );
+            try {
+              await sshService.exec(serverId, `pm2 delete "${pm2Name}"`);
+            } catch {}
+
+            await sshService.exec(
+              serverId,
+              `pm2 start "${project.startCommand}" --name "${pm2Name}" --cwd "${workDir}"`,
+            );
+            await sshService.exec(serverId, "pm2 save");
+
+            // 4. Verify PM2 process
+            try {
+              await sshService.exec(serverId, `pm2 show "${pm2Name}"`);
+            } catch (e) {
+              throw new Error(
+                "Service failed to start (PM2 process not found)",
+              );
+            }
+
+            emitDeployLog(
+              deploymentId,
+              "✅ Service started (background)!",
+              "success",
+              pid,
+            );
+          } else {
+            // Nohup Logic
+            const logFile = `/tmp/deploy-${deploymentId}.log`;
+            // 1. Start process in background
+            // Use < /dev/null to ensure ssh channel closes
+            // Use ( ... ) & to ensure shell detachment
+            await sshService.exec(
+              serverId,
+              `cd ${workDir} && (nohup ${project.startCommand} > ${logFile} 2>&1 < /dev/null & echo $! > "${workDir}/.deploy.pid")`,
+            );
+
+            // 2. Stream logs for 10 seconds to show startup progress
+            emitDeployLog(
+              deploymentId,
+              "📋 Tailing logs for 10s...",
+              "info",
+              pid,
+            );
+            try {
+              await sshService.execStreamLine(
+                serverId,
+                `timeout 10s tail -n +1 -f ${logFile} || true`,
+                (line) => {
+                  if (line.trim())
+                    emitDeployLog(deploymentId, line, "info", pid);
+                },
+              );
+            } catch (e) {
+              // Ignore tail errors (e.g. timeout kills it)
+            }
+
+            // 3. Verify process is still alive
+            try {
+              const pidCheck = await sshService.exec(
+                serverId,
+                `if [ -f "${workDir}/.deploy.pid" ] && kill -0 $(cat "${workDir}/.deploy.pid") 2>/dev/null; then echo "ALIVE"; else echo "DEAD"; fi`,
+              );
+
+              if (pidCheck.stdout.trim() !== "ALIVE") {
+                throw new Error(
+                  "Service failed to start (process died immediately)",
+                );
+              }
+            } catch (e: any) {
+              throw new Error(`Service failed to start: ${e.message}`);
+            }
+
+            emitDeployLog(
+              deploymentId,
+              "✅ Service started (background)!",
+              "success",
+              pid,
+            );
+          }
         }
 
         await this.updateStatus(deploymentId, "running", pid);
