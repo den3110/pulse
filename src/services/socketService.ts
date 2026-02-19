@@ -2,9 +2,11 @@ import { Server as IOServer } from "socket.io";
 import jwt from "jsonwebtoken";
 import config from "../config";
 import Deployment from "../models/Deployment";
+import sshService from "./sshService";
 import { sendSSE } from "./sseService";
 
 let io: IOServer;
+const terminalStreams = new Map<string, any>();
 
 export const initSocket = (server: any): IOServer => {
   io = new IOServer(server, {
@@ -78,6 +80,59 @@ export const initSocket = (server: any): IOServer => {
 
     socket.on("disconnect", () => {
       console.log(`[Socket] Client disconnected: ${socket.id}`);
+      // Clean up any active terminal sessions for this socket
+      if (terminalStreams.has(socket.id)) {
+        const stream = terminalStreams.get(socket.id);
+        stream.end();
+        terminalStreams.delete(socket.id);
+      }
+    });
+
+    // --- Terminal Events ---
+
+    socket.on("terminal:start", async ({ serverId, rows, cols }) => {
+      try {
+        // Clean up existing session if any
+        if (terminalStreams.has(socket.id)) {
+          const stream = terminalStreams.get(socket.id);
+          stream.end();
+          terminalStreams.delete(socket.id);
+        }
+
+        const stream = await sshService.createShell(serverId, { rows, cols });
+        terminalStreams.set(socket.id, stream);
+
+        stream.on("data", (data: Buffer) => {
+          socket.emit("terminal:output", data.toString("utf-8"));
+        });
+
+        stream.on("close", () => {
+          socket.emit("terminal:exit");
+          terminalStreams.delete(socket.id);
+        });
+
+        // Send initial ready signal?
+        // socket.emit("terminal:ready");
+      } catch (error: any) {
+        socket.emit(
+          "terminal:output",
+          `\r\nConnection failed: ${error.message}\r\n`,
+        );
+      }
+    });
+
+    socket.on("terminal:data", (data) => {
+      const stream = terminalStreams.get(socket.id);
+      if (stream) {
+        stream.write(data);
+      }
+    });
+
+    socket.on("terminal:resize", ({ rows, cols }) => {
+      const stream = terminalStreams.get(socket.id);
+      if (stream) {
+        stream.setWindow(rows, cols, 0, 0);
+      }
     });
   });
 

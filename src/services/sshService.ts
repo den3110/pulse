@@ -118,10 +118,11 @@ class SSHService {
     serverId: string,
     command: string,
     timeout = 15000,
+    options: { pty?: boolean } = {},
   ): Promise<SSHExecResult> {
     try {
       const conn = await this.getOrCreateConnection(serverId);
-      return await this.execOnConnection(conn, command, timeout);
+      return await this.execOnConnection(conn, command, timeout, options);
     } catch (error: any) {
       console.error(
         `[SSH] Exec failed for server ${serverId}: ${error.message}`,
@@ -137,7 +138,7 @@ class SSHService {
       this.closeConnection(serverId);
       try {
         const conn = await this.getOrCreateConnection(serverId);
-        return await this.execOnConnection(conn, command, timeout);
+        return await this.execOnConnection(conn, command, timeout, options);
       } catch (retryError: any) {
         console.error(
           `[SSH] Retry failed for server ${serverId}: ${retryError.message}`,
@@ -154,11 +155,12 @@ class SSHService {
     conn: Client,
     command: string,
     timeout = 15000,
+    options: { pty?: boolean } = {},
   ): Promise<SSHExecResult> {
     return new Promise((resolve, reject) => {
       let timeoutId: NodeJS.Timeout;
 
-      conn.exec(command, (err, stream) => {
+      conn.exec(command, { pty: options.pty }, (err, stream) => {
         if (err) return reject(err);
 
         timeoutId = setTimeout(() => {
@@ -237,6 +239,40 @@ class SSHService {
 
       conn.connect(connectConfig);
     });
+  }
+
+  /**
+   * Create an interactive shell session
+   */
+  async createShell(
+    serverId: string,
+    options: {
+      rows?: number;
+      cols?: number;
+      term?: string;
+    } = {},
+  ): Promise<any> {
+    try {
+      const conn = await this.getOrCreateConnection(serverId);
+      return new Promise((resolve, reject) => {
+        conn.shell(
+          {
+            term: options.term || "xterm-color",
+            rows: options.rows || 24,
+            cols: options.cols || 80,
+          },
+          (err, stream) => {
+            if (err) return reject(err);
+            resolve(stream);
+          },
+        );
+      });
+    } catch (error: any) {
+      console.error(
+        `[SSH] Failed to create shell for server ${serverId}: ${error.message}`,
+      );
+      throw error;
+    }
   }
 
   /**

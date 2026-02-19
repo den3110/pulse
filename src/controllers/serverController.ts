@@ -263,6 +263,7 @@ export const execCommand = async (
       req.params.id as string,
       command,
       timeout,
+      { pty: true },
     );
     res.json(result);
   } catch (error: any) {

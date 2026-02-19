@@ -78,7 +78,7 @@ class NginxService {
     this.validateFilename(filename);
     const result = await sshService.exec(
       serverId,
-      `cat ${this.sitesAvailable}/${filename}`,
+      `export LC_ALL=C.UTF-8; cat ${this.sitesAvailable}/${filename}`,
     );
     if (result.code !== 0) {
       throw new Error(result.stderr || "Failed to read config file");
