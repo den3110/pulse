@@ -231,12 +231,26 @@ export const getStats = async (
   res: Response,
 ): Promise<void> => {
   try {
+    const serverId = req.params.id;
+    const userId = req.user?._id;
+
     const server = await Server.findOne({
-      _id: req.params.id,
-      owner: req.user?._id,
+      _id: serverId,
+      owner: userId,
     });
+
     if (!server) {
-      res.status(404).json({ message: "Server not found" });
+      // Debug: Check if it exists globally
+      const globalServer = await Server.findById(serverId);
+      if (globalServer) {
+        res.status(403).json({
+          message: `Access denied. Server owner: ${globalServer.owner}, You: ${userId}`,
+        });
+      } else {
+        res
+          .status(404)
+          .json({ message: `Server ${serverId} does not exist in database` });
+      }
       return;
     }
 
@@ -306,13 +320,26 @@ export const getStatsHistory = async (
 ): Promise<void> => {
   try {
     const serverId = req.params.id;
+    const userId = req.user?._id;
+
     // Verify ownership
     const server = await Server.findOne({
       _id: serverId,
-      owner: req.user?._id,
+      owner: userId,
     });
+
     if (!server) {
-      res.status(404).json({ message: "Server not found" });
+      // Debug: Check if it exists globally
+      const globalServer = await Server.findById(serverId);
+      if (globalServer) {
+        res.status(403).json({
+          message: `Access denied. Server owner: ${globalServer.owner}, You: ${userId}`,
+        });
+      } else {
+        res
+          .status(404)
+          .json({ message: `Server ${serverId} does not exist in database` });
+      }
       return;
     }
 

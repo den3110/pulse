@@ -9,17 +9,17 @@ const router = Router();
 
 // CRUD
 router.get("/", protect, serverController.listServers);
-router.put("/reorder", protect, serverController.reorderServers); // Added reorderServers endpoint
+router.put("/reorder", protect, serverController.reorderServers);
 router.get("/:id", protect, serverController.getServer);
-router.post("/", serverController.createServer);
-router.put("/:id", serverController.updateServer);
-router.delete("/:id", serverController.deleteServer);
+router.post("/", protect, serverController.createServer);
+router.put("/:id", protect, serverController.updateServer);
+router.delete("/:id", protect, serverController.deleteServer);
 
 // Server operations
-router.post("/:id/test", serverController.testConnection);
-router.get("/:id/projects", serverController.getProjects);
-router.get("/:id/stats", serverController.getStats);
-router.get("/:id/stats/history", serverController.getStatsHistory);
-router.post("/:id/exec", serverController.execCommand);
+router.post("/:id/test", protect, serverController.testConnection);
+router.get("/:id/projects", protect, serverController.getProjects);
+router.get("/:id/stats", protect, serverController.getStats);
+router.get("/:id/stats/history", protect, serverController.getStatsHistory);
+router.post("/:id/exec", protect, serverController.execCommand);
 
 export default router;
