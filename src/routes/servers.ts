@@ -4,11 +4,13 @@ import * as serverController from "../controllers/serverController";
 
 const router = Router();
 
-router.use(protect);
+// The `protect` middleware is now applied directly to each route as per the instruction's implied change.
+// router.use(protect);
 
 // CRUD
-router.get("/", serverController.listServers);
-router.get("/:id", serverController.getServer);
+router.get("/", protect, serverController.listServers);
+router.put("/reorder", protect, serverController.reorderServers); // Added reorderServers endpoint
+router.get("/:id", protect, serverController.getServer);
 router.post("/", serverController.createServer);
 router.put("/:id", serverController.updateServer);
 router.delete("/:id", serverController.deleteServer);

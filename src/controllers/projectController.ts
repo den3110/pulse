@@ -62,8 +62,36 @@ export const listProjects = async (
   try {
     const projects = await Project.find({ owner: req.user?._id })
       .populate("server", "name host status")
-      .sort({ createdAt: -1 });
+      .sort({ order: 1, createdAt: -1 });
     res.json(projects);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const reorderProjects = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids)) {
+      res.status(400).json({ message: "ids must be an array" });
+      return;
+    }
+
+    const operations = ids.map((id: string, index: number) => ({
+      updateOne: {
+        filter: { _id: id, owner: req.user?._id },
+        update: { order: index },
+      },
+    }));
+
+    if (operations.length > 0) {
+      await Project.bulkWrite(operations);
+    }
+
+    res.json({ message: "Projects reordered successfully" });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

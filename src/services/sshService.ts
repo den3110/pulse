@@ -117,7 +117,7 @@ class SSHService {
   async exec(
     serverId: string,
     command: string,
-    timeout = 15000,
+    timeout = 60000,
     options: { pty?: boolean } = {},
   ): Promise<SSHExecResult> {
     try {
@@ -154,7 +154,7 @@ class SSHService {
   private execOnConnection(
     conn: Client,
     command: string,
-    timeout = 15000,
+    timeout = 60000,
     options: { pty?: boolean } = {},
   ): Promise<SSHExecResult> {
     return new Promise((resolve, reject) => {

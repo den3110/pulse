@@ -12,9 +12,38 @@ export const listServers = async (
 ): Promise<void> => {
   try {
     const servers = await Server.find({ owner: req.user?._id }).sort({
+      order: 1,
       createdAt: -1,
     });
     res.json(servers);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const reorderServers = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids)) {
+      res.status(400).json({ message: "ids must be an array" });
+      return;
+    }
+
+    const operations = ids.map((id: string, index: number) => ({
+      updateOne: {
+        filter: { _id: id, owner: req.user?._id },
+        update: { order: index },
+      },
+    }));
+
+    if (operations.length > 0) {
+      await Server.bulkWrite(operations);
+    }
+
+    res.json({ message: "Servers reordered successfully" });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

@@ -19,6 +19,7 @@ export interface IProject extends Document {
   autoDeploy: boolean;
   webhookSecret?: string;
   status: "idle" | "deploying" | "running" | "stopped" | "failed";
+  order: number;
   processManager: "nohup" | "pm2";
   lastDeployedAt?: Date;
   healthCheckUrl?: string;
@@ -113,6 +114,10 @@ const projectSchema = new Schema<IProject>(
       type: String,
       enum: ["idle", "deploying", "running", "stopped", "failed"],
       default: "idle",
+    },
+    order: {
+      type: Number,
+      default: 0,
     },
     processManager: {
       type: String,

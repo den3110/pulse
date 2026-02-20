@@ -22,10 +22,35 @@ class DeployService {
     triggeredBy: "manual" | "webhook" | "schedule" = "manual",
     userId?: string,
   ): Promise<string> {
-    // Deployment lock
+    // Check if a deployment is already in progress
     if (this.activeDeploys.has(projectId)) {
-      throw new Error("A deployment is already in progress for this project");
+      console.log(
+        `[Deploy] Active deployment found for ${projectId}. Cancelling...`,
+      );
+
+      // Cancel the current deployment
+      try {
+        await this.cancel(projectId);
+      } catch (e) {
+        console.warn(`[Deploy] Error cancelling previous deployment: ${e}`);
+      }
+
+      // Wait for the lock to be released (max 30s)
+      let retries = 0;
+      while (this.activeDeploys.has(projectId) && retries < 30) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        retries++;
+      }
+
+      if (this.activeDeploys.has(projectId)) {
+        throw new Error(
+          "Previous deployment could not be cancelled in time. Please try again later.",
+        );
+      }
+
+      console.log(`[Deploy] Previous deployment cancelled. Starting new one.`);
     }
+
     this.activeDeploys.add(projectId);
 
     const project = await Project.findById(projectId).populate("server");

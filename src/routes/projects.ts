@@ -14,6 +14,7 @@ router.post("/detect-branch", projectController.detectBranch);
 
 // CRUD
 router.get("/", projectController.listProjects);
+router.put("/reorder", projectController.reorderProjects);
 router.get("/:id", projectController.getProject);
 router.post("/", projectController.createProject);
 router.put("/:id", projectController.updateProject);

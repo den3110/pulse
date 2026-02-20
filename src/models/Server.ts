@@ -10,6 +10,7 @@ export interface IServer extends Document {
   privateKey?: string;
   passphrase?: string;
   status: "online" | "offline" | "unknown";
+  order: number;
   lastCheckedAt?: Date;
   systemInfo?: {
     os?: string;
@@ -64,6 +65,10 @@ const serverSchema = new Schema<IServer>(
       type: String,
       enum: ["online", "offline", "unknown"],
       default: "unknown",
+    },
+    order: {
+      type: Number,
+      default: 0,
     },
     lastCheckedAt: Date,
     systemInfo: {
