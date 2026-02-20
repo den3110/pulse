@@ -41,9 +41,10 @@ class GitPollingService {
       );
       this.pollingIntervalMs = parseInt(interval, 10) * 1000;
 
-      // Find all projects that have autoDeploy enabled and are not currently deploying
+      // Skip projects that have a GitHub webhook registered — those get instant deploys
       const projects = await Project.find({
         autoDeploy: true,
+        webhookRegistered: { $ne: true },
         status: {
           $nin: ["deploying", "building", "cloning", "installing", "starting"],
         },

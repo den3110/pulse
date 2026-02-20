@@ -17,9 +17,25 @@ export const detectBranch = async (
       return;
     }
 
+    // Build an authenticated URL for private repos using the user's GitHub token.
+    // Pattern: https://<token>@github.com/owner/repo.git
+    let resolvedUrl = repoUrl;
+    const user = await User.findById(req.user?._id).select(
+      "+githubAccessToken",
+    );
+    if (user?.githubAccessToken && repoUrl.includes("github.com")) {
+      // Strip any existing credentials first to avoid duplication
+      resolvedUrl = repoUrl.replace(/https?:\/\/[^@]*@/, "https://");
+      // Inject token
+      resolvedUrl = resolvedUrl.replace(
+        "https://github.com",
+        `https://${user.githubAccessToken}@github.com`,
+      );
+    }
+
     const result = await sshService.exec(
       serverId,
-      `git ls-remote --symref ${repoUrl} HEAD 2>&1 | head -1`,
+      `git ls-remote --symref ${resolvedUrl} HEAD 2>&1 | head -1`,
     );
 
     // Parse output like: ref: refs/heads/master  HEAD
@@ -30,7 +46,7 @@ export const detectBranch = async (
       // Fallback: try to get any branch
       const fallback = await sshService.exec(
         serverId,
-        `git ls-remote --heads ${repoUrl} 2>&1 | head -5`,
+        `git ls-remote --heads ${resolvedUrl} 2>&1 | head -5`,
       );
       const branches = fallback.stdout
         .split("\n")
@@ -43,10 +59,15 @@ export const detectBranch = async (
       if (branches.length > 0) {
         res.json({ branch: branches[0], allBranches: branches });
       } else {
+        // Sanitize error output — never expose the token
+        const safeDetail = (result.stdout || result.stderr || "").replace(
+          user?.githubAccessToken || "",
+          "[TOKEN]",
+        );
         res.status(400).json({
           message:
             "Could not detect branch. Check repo URL and server git access.",
-          detail: result.stdout || result.stderr,
+          detail: safeDetail,
         });
       }
     }
@@ -433,10 +454,36 @@ export const getWebhookUrl = async (
       return;
     }
 
-    const webhookUrl = `/api/webhook/${project._id}`;
+    const webhookUrl = `${req.protocol}://${req.get("host")}/api/webhook/${project._id}`;
     res.json({
       webhookUrl,
       webhookSecret: project.webhookSecret,
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const setWebhookRegistered = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { registered } = req.body; // boolean
+    const project = await Project.findOneAndUpdate(
+      { _id: req.params.id, owner: req.user?._id },
+      { webhookRegistered: !!registered },
+      { new: true },
+    );
+    if (!project) {
+      res.status(404).json({ message: "Project not found" });
+      return;
+    }
+    res.json({
+      webhookRegistered: project.webhookRegistered,
+      message: registered
+        ? "Webhook marked as registered — polling disabled for this project."
+        : "Polling re-enabled for this project.",
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -454,6 +501,19 @@ export const browseFolders = async (
       return;
     }
 
+    // Inject GitHub token for private repo access (same pattern as detectBranch)
+    let resolvedUrl = repoUrl;
+    const user = await User.findById(req.user?._id).select(
+      "+githubAccessToken",
+    );
+    if (user?.githubAccessToken && repoUrl.includes("github.com")) {
+      resolvedUrl = repoUrl.replace(/https?:\/\/[^@]*@/, "https://");
+      resolvedUrl = resolvedUrl.replace(
+        "https://github.com",
+        `https://${user.githubAccessToken}@github.com`,
+      );
+    }
+
     const branchName = branch || "main";
     const lsTreePath = subPath ? `${subPath}/` : "";
 
@@ -467,7 +527,7 @@ export const browseFolders = async (
         `test -d "${deployPath}/.git" && cd "${deployPath}" && git remote get-url origin 2>/dev/null || echo "NO"`,
       );
       const remoteUrl = check.stdout.trim();
-      // Only use existing clone if remote URL matches
+      // Compare against the original (non-authed) URL to avoid mismatch
       if (remoteUrl && remoteUrl !== "NO" && remoteUrl === repoUrl) {
         gitDir = deployPath;
       }
@@ -478,13 +538,19 @@ export const browseFolders = async (
       const tmpDir = `/tmp/repo-browse-${Date.now()}`;
       const cloneResult = await sshService.exec(
         serverId,
-        `git clone --depth 1 --filter=blob:none --no-checkout "${repoUrl}" -b "${branchName}" "${tmpDir}" 2>&1`,
+        `git clone --depth 1 --filter=blob:none --no-checkout "${resolvedUrl}" -b "${branchName}" "${tmpDir}" 2>&1`,
       );
       if (cloneResult.code !== 0) {
+        // Sanitize token from error output
+        const safeDetail = (
+          cloneResult.stdout ||
+          cloneResult.stderr ||
+          ""
+        ).replace(user?.githubAccessToken || "", "[TOKEN]");
         res.status(400).json({
           message:
             "Failed to access repository. Check the URL and server git access.",
-          detail: cloneResult.stdout || cloneResult.stderr,
+          detail: safeDetail,
         });
         return;
       }

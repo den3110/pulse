@@ -6,6 +6,7 @@ export interface IDeployment extends Document {
   commitHash?: string;
   commitMessage?: string;
   commitAuthor?: string;
+  commitUrl?: string;
   branch: string;
   status:
     | "pending"
@@ -41,6 +42,7 @@ const deploymentSchema = new Schema<IDeployment>(
     commitHash: String,
     commitMessage: String,
     commitAuthor: String,
+    commitUrl: String,
     branch: {
       type: String,
       default: "main",

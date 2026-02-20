@@ -3,6 +3,7 @@ import Deployment from "../models/Deployment";
 import Notification from "../models/Notification";
 import User from "../models/User";
 import SystemSetting from "../models/SystemSetting";
+import { GitHubService } from "./githubService";
 import sshService from "./sshService";
 import {
   emitDeployLog,
@@ -59,6 +60,25 @@ class DeployService {
       throw new Error("Project not found");
     }
 
+    // Resolve authenticated repo URL for private GitHub repos
+    let resolvedRepoUrl = project.repoUrl;
+    if (project.repoUrl.includes("github.com")) {
+      // For manual deploys: use the triggering user's token.
+      // For webhooks/schedule: fall back to the project owner's token.
+      const tokenUserId = userId || project.owner?.toString();
+      const githubUser = tokenUserId
+        ? await User.findById(tokenUserId).select("+githubAccessToken")
+        : null;
+      if (githubUser?.githubAccessToken) {
+        resolvedRepoUrl = project.repoUrl
+          .replace(/https?:\/\/[^@]*@/, "https://")
+          .replace(
+            "https://github.com",
+            `https://${githubUser.githubAccessToken}@github.com`,
+          );
+      }
+    }
+
     // Create deployment record
     const deployment = await Deployment.create({
       project: project._id,
@@ -74,9 +94,11 @@ class DeployService {
     const serverId = (project.server as any)._id.toString();
 
     // Run deploy pipeline asynchronously
-    this.runPipeline(deploymentId, serverId, project).catch((err) => {
-      console.error(`[Deploy] Pipeline failed for ${deploymentId}:`, err);
-    });
+    this.runPipeline(deploymentId, serverId, project, resolvedRepoUrl).catch(
+      (err) => {
+        console.error(`[Deploy] Pipeline failed for ${deploymentId}:`, err);
+      },
+    );
 
     // Notify started
     this.sendNotification(project.name, "started", deploymentId).catch(
@@ -90,9 +112,11 @@ class DeployService {
     deploymentId: string,
     serverId: string,
     project: IProject,
+    resolvedRepoUrl?: string,
   ): Promise<void> {
     const deployPath = project.deployPath;
-    const repoUrl = project.repoUrl;
+    // Use authenticated URL if provided (for private repos), else fall back to stored URL
+    const repoUrl = resolvedRepoUrl || project.repoUrl;
     const branch = project.branch;
     const pid = project._id.toString();
     // workDir: if repoFolder is set, commands run inside that subfolder
@@ -186,7 +210,17 @@ class DeployService {
         commitHash: hash,
         commitMessage: cleanMessage,
         commitAuthor: author,
+        commitUrl:
+          project.githubRepoOwner && project.githubRepoName
+            ? `https://github.com/${project.githubRepoOwner}/${project.githubRepoName}/commit/${hash}`
+            : "",
       });
+
+      // Update GitHub Status - Pending
+      if (project.githubRepoId) {
+        await this.updateGitHubStatus(project, hash, "pending", deploymentId);
+      }
+
       emitDeployLog(
         deploymentId,
         `✅ Code ready at commit: ${hash} — ${message}`,
@@ -451,6 +485,15 @@ class DeployService {
       // Send Notification on success
       await this.sendNotification(project.name, "success", deploymentId);
 
+      // Update GitHub Status - Success
+      // We need hash here.
+      // But hash was local variable.
+      // We can fetch it from deployment or use a wider scope variable.
+      // Since hash is available in this scope (it's inside try), we use it.
+      if (project.githubRepoId && typeof hash !== "undefined") {
+        await this.updateGitHubStatus(project, hash, "success", deploymentId);
+      }
+
       // Create in-app notification for all users
       await this.createNotification(
         project,
@@ -464,6 +507,28 @@ class DeployService {
       this.activeDeploys.delete(pid);
       this.cancelledDeploys.delete(pid);
     } catch (error: any) {
+      if (project.githubRepoId) {
+        // Try to get hash from deployment if not available in error scope (requires wider scope variable really)
+        // For now, we only update failure status if we reached the point of getting a hash.
+        // If hash is undefined (failed at clone), we can't update status on a specific commit easily.
+        // Ideally, use the 'hash' variable if it was hoisted.
+        // But typescript won't let us use 'hash' here because it's in try block.
+        // We can fetch the deployment record which has commitHash if it was saved.
+        try {
+          const deployment = await Deployment.findById(deploymentId);
+          if (deployment?.commitHash) {
+            await this.updateGitHubStatus(
+              project,
+              deployment.commitHash,
+              "failure",
+              deploymentId,
+            );
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
       const isCancelled = this.cancelledDeploys.has(pid);
       if (isCancelled) {
         emitDeployLog(
@@ -709,6 +774,47 @@ class DeployService {
   async restart(projectId: string, userId?: string): Promise<string> {
     await this.stop(projectId);
     return this.deploy(projectId, "manual", userId);
+  }
+
+  private async updateGitHubStatus(
+    project: IProject,
+    commitHash: string,
+    state: "pending" | "success" | "failure",
+    deploymentId: string,
+  ): Promise<void> {
+    if (!project.githubRepoOwner || !project.githubRepoName || !commitHash) {
+      return;
+    }
+
+    try {
+      const user = await User.findById(project.owner).select(
+        "+githubAccessToken",
+      );
+      if (!user?.githubAccessToken) return;
+
+      const targetUrl = `${
+        process.env.CLIENT_URL || "http://localhost:5173"
+      }/projects/${project._id}/deploy`;
+
+      const description =
+        state === "pending"
+          ? "Deployment in progress..."
+          : state === "success"
+            ? "Deployment successful!"
+            : "Deployment failed";
+
+      await GitHubService.getInstance().updateCommitStatus(
+        user.githubAccessToken,
+        project.githubRepoOwner,
+        project.githubRepoName,
+        commitHash,
+        state,
+        targetUrl,
+        description,
+      );
+    } catch (error) {
+      console.error("[Deploy] Failed to update GitHub status:", error);
+    }
   }
 
   /**

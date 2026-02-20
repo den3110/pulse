@@ -8,6 +8,10 @@ export interface IUser extends Document {
   role: "admin" | "viewer";
   refreshTokens?: string[];
   activeServer?: string;
+  githubId?: string;
+  githubUsername?: string;
+  githubAccessToken?: string;
+  githubAvatarUrl?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -50,6 +54,14 @@ const userSchema = new Schema<IUser>(
       type: Schema.Types.ObjectId,
       ref: "Server",
     },
+    githubId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    githubUsername: String,
+    githubAccessToken: String,
+    githubAvatarUrl: String,
   },
   {
     timestamps: true,

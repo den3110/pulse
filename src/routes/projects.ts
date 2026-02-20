@@ -24,5 +24,6 @@ router.delete("/:id", projectController.deleteProject);
 router.put("/:id/save-restart", projectController.saveAndRestart);
 router.delete("/:id/output", projectController.deleteOutput);
 router.get("/:id/webhook-url", projectController.getWebhookUrl);
+router.put("/:id/webhook-registered", projectController.setWebhookRegistered);
 
 export default router;

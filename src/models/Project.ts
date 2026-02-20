@@ -18,6 +18,11 @@ export interface IProject extends Document {
   envVars: Record<string, string>;
   autoDeploy: boolean;
   webhookSecret?: string;
+  webhookRegistered?: boolean;
+  githubRepoId?: string;
+  githubRepoOwner?: string;
+  githubRepoName?: string;
+  githubRepoDefaultBranch?: string;
   status: "idle" | "deploying" | "running" | "stopped" | "failed";
   order: number;
   processManager: "nohup" | "pm2";
@@ -109,6 +114,14 @@ const projectSchema = new Schema<IProject>(
     webhookSecret: {
       type: String,
       select: false,
+    },
+    githubRepoId: String,
+    githubRepoOwner: String,
+    githubRepoName: String,
+    githubRepoDefaultBranch: String,
+    webhookRegistered: {
+      type: Boolean,
+      default: false,
     },
     status: {
       type: String,

@@ -13,4 +13,7 @@ export default {
     .split(",")
     .map((o) => o.trim())
     .filter((o) => o),
+  githubClientId: process.env.GITHUB_CLIENT_ID || "",
+  githubClientSecret: process.env.GITHUB_CLIENT_SECRET || "",
+  publicUrl: process.env.PUBLIC_URL || "", // Your server's public URL e.g. https://api.example.com
 };

@@ -166,6 +166,8 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
       email: user.email,
       role: user.role,
       activeServer: user.activeServer,
+      githubUsername: user.githubUsername,
+      githubAvatarUrl: user.githubAvatarUrl,
       createdAt: user.createdAt,
     });
   } catch (error: any) {
