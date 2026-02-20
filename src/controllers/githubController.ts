@@ -241,18 +241,23 @@ export const setupWebhook = async (
       return;
     }
 
+    const project = await Project.findById(projectId).select("+webhookSecret");
+    if (!project || !project.webhookSecret) {
+      res.status(404).json({ message: "Project or webhook secret not found" });
+      return;
+    }
+
     // Use the configured PUBLIC_URL if set, otherwise fall back to request host
     const baseUrl = config.publicUrl || `${req.protocol}://${req.get("host")}`;
     const webhookUrl = `${baseUrl}/api/webhook/${projectId}`;
     console.log("[Webhook] Creating webhook URL:", webhookUrl);
 
-    // Use a simple secret or the project ID for now
     await githubService.createWebhook(
       user.githubAccessToken,
       owner,
       repo,
       webhookUrl,
-      projectId, // simple secret
+      project.webhookSecret,
     );
 
     // Auto-mark webhook as registered to disable polling

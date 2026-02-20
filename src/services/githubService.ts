@@ -356,7 +356,25 @@ export class GitHubService {
         (hook: any) => hook.config.url === webhookUrl,
       );
       if (exists) {
-        console.log("Webhook already exists for", repo);
+        console.log("Webhook already exists for", repo, "- updating secret...");
+        await axios.patch(
+          `${this.baseUrl}/repos/${owner}/${repo}/hooks/${exists.id}`,
+          {
+            config: {
+              url: webhookUrl,
+              content_type: "json",
+              secret: secret,
+              insecure_ssl: "0",
+            },
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.v3+json",
+              "User-Agent": "PulseDeploy/1.0",
+            },
+          },
+        );
         return;
       }
 
