@@ -7,16 +7,23 @@ export const handleWebhook = async (
   req: Request,
   res: Response,
 ): Promise<void> => {
+  console.log(
+    `[Webhook] Received webhook request for project ${req.params.projectId}`,
+  );
   try {
     const project = await Project.findById(req.params.projectId).select(
       "+webhookSecret",
     );
     if (!project) {
+      console.log(`[Webhook] Project ${req.params.projectId} not found`);
       res.status(404).json({ message: "Project not found" });
       return;
     }
 
     if (!project.autoDeploy) {
+      console.log(
+        `[Webhook] Auto deploy is disabled for project ${req.params.projectId}`,
+      );
       res
         .status(400)
         .json({ message: "Auto deploy is disabled for this project" });

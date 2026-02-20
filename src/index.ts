@@ -36,7 +36,11 @@ initSocket(server);
 
 // Middleware
 app.use(helmet());
-app.use(
+app.use((req, res, next) => {
+  // Pass-through for webhooks to avoid CORS issues from external services like GitHub
+  if (req.path.startsWith("/api/webhook")) {
+    return next();
+  }
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (like mobile apps or curl requests)
@@ -54,8 +58,8 @@ app.use(
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
-  }),
-);
+  })(req, res, next);
+});
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
