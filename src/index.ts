@@ -29,6 +29,7 @@ import ftpRoutes from "./routes/ftp";
 import databaseRoutes from "./routes/database";
 
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 
 // Initialize Socket.IO
