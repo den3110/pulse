@@ -18,5 +18,8 @@ router.get(
   protect,
   databaseController.downloadBackup,
 );
+router.post("/:serverId/query", protect, databaseController.executeQuery);
+router.post("/:serverId/action", protect, databaseController.executeAction);
+router.post("/:serverId/schema", protect, databaseController.getSchema);
 
 export default router;
