@@ -1,6 +1,7 @@
 import { Client, ConnectConfig } from "ssh2";
 import { IServer } from "../models/Server";
 import Server from "../models/Server";
+import logger from "../utils/logger";
 
 export interface SSHExecResult {
   stdout: string;
@@ -50,7 +51,7 @@ class SSHService {
       });
 
       conn.on("error", (err) => {
-        console.error(
+        logger.error(
           `[SSH] Connection error for ${server.host}: ${err.message}`,
         );
         this.pool.delete(serverId);
@@ -124,7 +125,7 @@ class SSHService {
       const conn = await this.getOrCreateConnection(serverId);
       return await this.execOnConnection(conn, command, timeout, options);
     } catch (error: any) {
-      console.error(
+      logger.error(
         `[SSH] Exec failed for server ${serverId}: ${error.message}`,
       );
 
@@ -133,14 +134,14 @@ class SSHService {
         throw error;
       }
 
-      console.log(`[SSH] Retrying connection for server ${serverId}...`);
+      logger.info(`[SSH] Retrying connection for server ${serverId}...`);
       // If pooled connection failed (e.g. broken pipe), retry with fresh connection
       this.closeConnection(serverId);
       try {
         const conn = await this.getOrCreateConnection(serverId);
         return await this.execOnConnection(conn, command, timeout, options);
       } catch (retryError: any) {
-        console.error(
+        logger.error(
           `[SSH] Retry failed for server ${serverId}: ${retryError.message}`,
         );
         throw retryError;
@@ -327,7 +328,7 @@ class SSHService {
       });
 
       conn.on("error", (err) => {
-        console.error(`[SSH] Dedicated shell connection error: ${err.message}`);
+        logger.error(`[SSH] Dedicated shell connection error: ${err.message}`);
         reject(new Error(`SSH connection failed: ${err.message}`));
       });
 
@@ -378,18 +379,12 @@ class SSHService {
     // We use ; to separate commands so they run independently.
     // If one fails, it prints a default value so the parsing logic doesn't break.
     const commands = [
-      // 1. CPU Usage: vmstat 1 2 (take 2nd line of output for accurate reading)
-      // Tail -1 to get the last line (the actual reading), awk to get idle (US+SY+ID+WA+ST are usually last columns, we want ID which is usually 15th col in standard vmstat, but let's be careful.
-      // Standard vmstat output: r b swpd free buff cache si so bi bo in cs us sy id wa st
-      // id is column 15.
-      // We'll trust "us + sy" or "100 - id".
-      // Let's try: vmstat 1 2 | tail -1 | awk '{print $15}' (idle)
-      // Note: vmstat output varies by version.
-      // Safer: top -bn1 | grep "Cpu(s)" ... but top failed before.
-      // Let's stick to vmstat but be flexible.
-      // Actually, let's use a combination if possible or just vmstat.
-      // "vmstat 1 2" output last line.
-      "(vmstat 1 2 | tail -1 | awk '{print 100 - $15}' || echo '0')",
+      // 1. CPU Usage: Using `top -bn1` is instant and avoids the 1-second delay from vmstat.
+      // We grab the Cpu line, extract the idle percentage (usually 8th or 4th column depending on top version)
+      // `top -bn1 | grep "Cpu(s)"` line usually looks like:
+      // %Cpu(s):  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+      // We grab the 'id' value and subtract from 100.
+      "(top -bn1 | grep 'Cpu(s)' | awk -F',' '{for(i=1;i<=NF;i++) if($i ~/id/) print $i}' | awk '{print 100 - $1}' || echo '0')",
 
       // 2. Memory: free -m (megabytes)
       "(free -m | awk 'NR==2{printf \"%s|%s|%s|%.1f%%\", $2,$3,$4,$3/$2*100}' || echo '0|0|0|0%')",
@@ -476,7 +471,7 @@ class SSHService {
         loadAvg: loadAvgRaw,
       };
     } catch (error: any) {
-      console.error("Failed to get system stats:", error.message);
+      logger.error(`Failed to get system stats: ${error.message}`);
       // Return default values instead of throwing
       return {
         cpu: "0%",

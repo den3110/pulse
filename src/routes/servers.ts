@@ -21,5 +21,11 @@ router.get("/:id/projects", protect, serverController.getProjects);
 router.get("/:id/stats", protect, serverController.getStats);
 router.get("/:id/stats/history", protect, serverController.getStatsHistory);
 router.post("/:id/exec", protect, serverController.execCommand);
+router.get("/:id/snapshots", protect, serverController.getSnapshots);
+router.get(
+  "/:id/snapshots/latest",
+  protect,
+  serverController.getLatestSnapshot,
+);
 
 export default router;

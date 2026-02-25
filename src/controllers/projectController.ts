@@ -83,7 +83,8 @@ export const listProjects = async (
   try {
     const projects = await Project.find({ owner: req.user?._id })
       .populate("server", "name host status")
-      .sort({ order: 1, createdAt: -1 });
+      .sort({ order: 1, createdAt: -1 })
+      .lean();
     res.json(projects);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -126,7 +127,9 @@ export const getProject = async (
     const project = await Project.findOne({
       _id: req.params.id,
       owner: req.user?._id,
-    }).populate("server", "name host status");
+    })
+      .populate("server", "name host status")
+      .lean();
     if (!project) {
       res.status(404).json({ message: "Project not found" });
       return;
@@ -312,7 +315,7 @@ export const deleteOutput = async (
     const project = await Project.findOne({
       _id: req.params.id,
       owner: req.user?._id,
-    });
+    }).lean();
     if (!project) {
       res.status(404).json({ message: "Project not found" });
       return;
@@ -448,7 +451,9 @@ export const getWebhookUrl = async (
     const project = await Project.findOne({
       _id: req.params.id,
       owner: req.user?._id,
-    }).select("+webhookSecret");
+    })
+      .select("+webhookSecret")
+      .lean();
     if (!project) {
       res.status(404).json({ message: "Project not found" });
       return;

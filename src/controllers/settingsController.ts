@@ -20,7 +20,7 @@ export const getSettings = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const settings = await SystemSetting.find();
+    const settings = await SystemSetting.find().lean();
     const result: Record<string, string> = { ...DEFAULTS };
 
     settings.forEach((s) => {
@@ -119,11 +119,18 @@ export const getNotificationSettings = async (
   res: Response,
 ): Promise<void> => {
   try {
-    let settings = await Settings.findOne();
+    let settings: any = await Settings.findOne().lean();
     if (!settings) {
       settings = await Settings.create({});
     }
-    res.json(settings.notifications);
+    res.json(
+      settings.notifications || {
+        email: false,
+        telegram: false,
+        slack: false,
+        webhook: false,
+      },
+    );
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

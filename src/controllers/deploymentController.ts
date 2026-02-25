@@ -282,7 +282,8 @@ export const getHistory = async (
       .populate("triggeredByUser", "username")
       .select(
         "status commitHash branch triggeredBy triggeredByUser startedAt finishedAt errorMessage",
-      );
+      )
+      .lean();
 
     const total = await Deployment.countDocuments({
       project: project._id,
@@ -381,7 +382,8 @@ export const listRecent = async (
       .limit(limit)
       .populate("project", "name")
       .populate("server", "name host")
-      .populate("triggeredByUser", "username");
+      .populate("triggeredByUser", "username")
+      .lean();
 
     res.json(deployments);
   } catch (error: any) {

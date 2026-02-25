@@ -10,6 +10,7 @@ import {
   emitDeployStatus,
   emitNotification,
 } from "./socketService";
+import logger from "../utils/logger";
 
 class DeployService {
   private activeDeploys: Set<string> = new Set();
@@ -25,7 +26,7 @@ class DeployService {
   ): Promise<string> {
     // Check if a deployment is already in progress
     if (this.activeDeploys.has(projectId)) {
-      console.log(
+      logger.info(
         `[Deploy] Active deployment found for ${projectId}. Cancelling...`,
       );
 
@@ -33,7 +34,7 @@ class DeployService {
       try {
         await this.cancel(projectId);
       } catch (e) {
-        console.warn(`[Deploy] Error cancelling previous deployment: ${e}`);
+        logger.warn(`[Deploy] Error cancelling previous deployment: ${e}`);
       }
 
       // Wait for the lock to be released (max 30s)
@@ -49,7 +50,7 @@ class DeployService {
         );
       }
 
-      console.log(`[Deploy] Previous deployment cancelled. Starting new one.`);
+      logger.info(`[Deploy] Previous deployment cancelled. Starting new one.`);
     }
 
     this.activeDeploys.add(projectId);
@@ -96,7 +97,9 @@ class DeployService {
     // Run deploy pipeline asynchronously
     this.runPipeline(deploymentId, serverId, project, resolvedRepoUrl).catch(
       (err) => {
-        console.error(`[Deploy] Pipeline failed for ${deploymentId}:`, err);
+        logger.error(
+          `[Deploy] Pipeline failed for ${deploymentId}: ${err.message}`,
+        );
       },
     );
 
@@ -171,7 +174,7 @@ class DeployService {
         await this.execWithLogs(
           serverId,
           deploymentId,
-          `cd ${deployPath} && git fetch origin && git checkout ${branch} && git pull origin ${branch}`,
+          `cd ${deployPath} && git stash && git fetch origin && git checkout ${branch} && git pull origin ${branch}`,
           pid,
         );
       } else {
@@ -606,8 +609,10 @@ class DeployService {
       created.forEach((notif) => {
         emitNotification(notif.userId.toString(), notif);
       });
-    } catch (err) {
-      console.error("[Notification] Failed to create notification:", err);
+    } catch (err: any) {
+      logger.error(
+        `[Notification] Failed to create notification: ${err.message}`,
+      );
     }
   }
 
@@ -880,7 +885,7 @@ class DeployService {
         await this.execWithLogs(
           serverId,
           deploymentId,
-          `cd ${deployPath} && git fetch origin && git checkout ${commitHash}`,
+          `cd ${deployPath} && git stash && git fetch origin && git checkout ${commitHash}`,
           pid,
         );
 

@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import Project from "../models/Project";
 import sshService from "./sshService";
+import snapshotService from "./snapshotService";
 import Server from "../models/Server";
 import ServerStats from "../models/ServerStats";
 import { emitServerStats } from "./socketService";
@@ -13,6 +14,11 @@ class SchedulerService {
     // Health check every 5 minutes
     cron.schedule("*/5 * * * *", () => {
       this.healthCheckAllServers();
+    });
+
+    // Infrastructure Time Machine Snapshot every 5 minutes
+    cron.schedule("*/5 * * * *", () => {
+      this.captureAllSnapshots();
     });
 
     // Clean old deployment logs every day at midnight
@@ -65,6 +71,26 @@ class SchedulerService {
       }
     } catch (error) {
       console.error("[Scheduler] Realtime stats failed:", error);
+    }
+  }
+
+  /**
+   * Capture Time Machine Snapshots for all online servers
+   */
+  async captureAllSnapshots(): Promise<void> {
+    try {
+      const servers = await Server.find({ status: "online" });
+      for (const server of servers) {
+        // Run in background, don't await loop
+        snapshotService.captureSnapshot(server._id.toString()).catch((err) => {
+          console.error(
+            `[Scheduler] Snapshot capture failed for server ${server.name}:`,
+            err,
+          );
+        });
+      }
+    } catch (error) {
+      console.error("[Scheduler] captureAllSnapshots failed:", error);
     }
   }
 

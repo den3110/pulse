@@ -1,6 +1,7 @@
 import { Response } from "express";
 import Server from "../models/Server";
 import ServerStat from "../models/ServerStat";
+import ServerSnapshot from "../models/ServerSnapshot";
 import Project from "../models/Project";
 import sshService from "../services/sshService";
 import { AuthRequest } from "../middleware/auth";
@@ -11,10 +12,12 @@ export const listServers = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const servers = await Server.find({ owner: req.user?._id }).sort({
-      order: 1,
-      createdAt: -1,
-    });
+    const servers = await Server.find({ owner: req.user?._id })
+      .sort({
+        order: 1,
+        createdAt: -1,
+      })
+      .lean();
     res.json(servers);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -57,7 +60,7 @@ export const getServer = async (
     const server = await Server.findOne({
       _id: req.params.id,
       owner: req.user?._id,
-    });
+    }).lean();
     if (!server) {
       res.status(404).json({ message: "Server not found" });
       return;
@@ -165,7 +168,7 @@ export const deleteServer = async (
     const server = await Server.findOneAndDelete({
       _id: req.params.id,
       owner: req.user?._id,
-    });
+    }).lean();
     if (!server) {
       res.status(404).json({ message: "Server not found" });
       return;
@@ -191,7 +194,7 @@ export const testConnection = async (
     const server = await Server.findOne({
       _id: req.params.id,
       owner: req.user?._id,
-    });
+    }).lean();
     if (!server) {
       res.status(404).json({ message: "Server not found" });
       return;
@@ -219,7 +222,9 @@ export const getProjects = async (
     const projects = await Project.find({
       server: req.params.id,
       owner: req.user?._id,
-    }).select("name repoUrl branch deployPath status");
+    })
+      .select("name repoUrl branch deployPath status")
+      .lean();
     res.json(projects);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -237,11 +242,11 @@ export const getStats = async (
     const server = await Server.findOne({
       _id: serverId,
       owner: userId,
-    });
+    }).lean();
 
     if (!server) {
       // Debug: Check if it exists globally
-      const globalServer = await Server.findById(serverId);
+      const globalServer = await Server.findById(serverId).lean();
       if (globalServer) {
         res.status(403).json({
           message: `Access denied. Server owner: ${globalServer.owner}, You: ${userId}`,
@@ -290,7 +295,7 @@ export const execCommand = async (
     const server = await Server.findOne({
       _id: req.params.id,
       owner: req.user?._id,
-    });
+    }).lean();
     if (!server) {
       res.status(404).json({ message: "Server not found" });
       return;
@@ -326,11 +331,11 @@ export const getStatsHistory = async (
     const server = await Server.findOne({
       _id: serverId,
       owner: userId,
-    });
+    }).lean();
 
     if (!server) {
       // Debug: Check if it exists globally
-      const globalServer = await Server.findById(serverId);
+      const globalServer = await Server.findById(serverId).lean();
       if (globalServer) {
         res.status(403).json({
           message: `Access denied. Server owner: ${globalServer.owner}, You: ${userId}`,
@@ -345,7 +350,8 @@ export const getStatsHistory = async (
 
     const history = await ServerStat.find({ server: serverId })
       .sort({ timestamp: -1 })
-      .limit(30);
+      .limit(30)
+      .lean();
 
     console.log(
       `[getStatsHistory] Found ${history.length} records for server ${serverId}`,
@@ -353,6 +359,80 @@ export const getStatsHistory = async (
 
     // Return in ascending order for charts
     res.json(history.reverse());
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getSnapshots = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const serverId = req.params.id;
+    const userId = req.user?._id;
+
+    const server = await Server.findOne({
+      _id: serverId,
+      owner: userId,
+    }).lean();
+
+    if (!server) {
+      res.status(404).json({ message: "Server not found" });
+      return;
+    }
+
+    const { start, end, limit } = req.query;
+    const query: any = { server: serverId };
+
+    if (start || end) {
+      query.timestamp = {};
+      if (start) query.timestamp.$gte = new Date(start as string);
+      if (end) query.timestamp.$lte = new Date(end as string);
+    }
+
+    const queryLimit = limit ? parseInt(limit as string, 10) : 100;
+
+    const snapshots = await ServerSnapshot.find(query)
+      .sort({ timestamp: -1 })
+      .limit(queryLimit)
+      .lean();
+
+    // Chronological order for timeline slider
+    res.json(snapshots.reverse());
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getLatestSnapshot = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const serverId = req.params.id;
+    const userId = req.user?._id;
+
+    const server = await Server.findOne({
+      _id: serverId,
+      owner: userId,
+    }).lean();
+
+    if (!server) {
+      res.status(404).json({ message: "Server not found" });
+      return;
+    }
+
+    const snapshot = await ServerSnapshot.findOne({ server: serverId })
+      .sort({ timestamp: -1 })
+      .lean();
+
+    if (!snapshot) {
+      res.status(404).json({ message: "No snapshots found for this server" });
+      return;
+    }
+
+    res.json(snapshot);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
