@@ -1,6 +1,7 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/auth";
 import nginxService from "../services/nginxService";
+import { logActivity } from "../services/activityLogger";
 
 export const listConfigs = async (
   req: AuthRequest,
@@ -42,6 +43,15 @@ export const saveConfig = async (
       req.body.content,
     );
     res.json({ message: "Config saved" });
+
+    logActivity({
+      action: "nginx.update",
+      userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
+      username: req.user?.username,
+      details: `Saved Nginx config ${req.params.name}`,
+      ip: req.ip,
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -57,6 +67,15 @@ export const deleteConfig = async (
       req.params.name as string,
     );
     res.json({ message: "Config deleted" });
+
+    logActivity({
+      action: "nginx.update",
+      userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
+      username: req.user?.username,
+      details: `Deleted Nginx config ${req.params.name}`,
+      ip: req.ip,
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -72,6 +91,15 @@ export const enableConfig = async (
       req.params.name as string,
     );
     res.json({ message: "Config enabled" });
+
+    logActivity({
+      action: "nginx.update",
+      userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
+      username: req.user?.username,
+      details: `Enabled Nginx config ${req.params.name}`,
+      ip: req.ip,
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -87,6 +115,15 @@ export const disableConfig = async (
       req.params.name as string,
     );
     res.json({ message: "Config disabled" });
+
+    logActivity({
+      action: "nginx.update",
+      userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
+      username: req.user?.username,
+      details: `Disabled Nginx config ${req.params.name}`,
+      ip: req.ip,
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -165,7 +202,63 @@ export const saveAndReload = async (
       req.body.content,
     );
     res.json(result);
+
+    logActivity({
+      action: "nginx.update",
+      userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
+      username: req.user?.username,
+      details: `Saved and reloaded Nginx config ${req.params.name}`,
+      ip: req.ip,
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
+
+
+export const provisionSsl = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { domain, email } = req.body;
+    if (!domain || !email) {
+      res.status(400).json({ message: 'Domain and email are required' });
+      return;
+    }
+
+    const { default: sslService } = await import('../services/sslService');
+    const result = await sslService.provisionSsl(
+      req.params.serverId as string,
+      domain,
+      email,
+      req.user!._id.toString(),
+      req.user!.currentTeam?.toString(),
+    );
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const listCertificates = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { default: sslService } = await import('../services/sslService');
+    const result = await sslService.listCertificates(
+      req.params.serverId as string,
+    );
+    res.json({ output: result });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+

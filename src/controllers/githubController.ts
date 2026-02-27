@@ -22,7 +22,11 @@ export const connectGitHub = async (
     }
 
     // Exchange code for token
-    const accessToken = await githubService.exchangeCodeForToken(code);
+    const redirectUri = `${config.clientUrl}/settings`;
+    const accessToken = await githubService.exchangeCodeForToken(
+      code,
+      redirectUri,
+    );
 
     // Get GitHub profile
     const githubProfile = await githubService.getUserProfile(accessToken);

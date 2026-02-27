@@ -1,5 +1,5 @@
 import { Router, Response } from "express";
-import { protect, AuthRequest } from "../middleware/auth";
+import { protect, AuthRequest, requireTeamRole } from "../middleware/auth";
 import Server from "../models/Server";
 import * as nginxController from "../controllers/nginxController";
 
@@ -35,16 +35,33 @@ router.use("/:serverId", verifyServer as any);
 // Config CRUD
 router.get("/:serverId/configs", nginxController.listConfigs);
 router.get("/:serverId/configs/:name", nginxController.getConfig);
-router.post("/:serverId/configs/:name", nginxController.saveConfig);
+router.post(
+  "/:serverId/configs/:name",
+  requireTeamRole(["admin"]),
+  nginxController.saveConfig,
+);
 router.post(
   "/:serverId/configs/:name/save-reload",
+  requireTeamRole(["admin"]),
   nginxController.saveAndReload,
 );
-router.delete("/:serverId/configs/:name", nginxController.deleteConfig);
+router.delete(
+  "/:serverId/configs/:name",
+  requireTeamRole(["admin"]),
+  nginxController.deleteConfig,
+);
 
 // Enable / Disable
-router.post("/:serverId/configs/:name/enable", nginxController.enableConfig);
-router.post("/:serverId/configs/:name/disable", nginxController.disableConfig);
+router.post(
+  "/:serverId/configs/:name/enable",
+  requireTeamRole(["admin"]),
+  nginxController.enableConfig,
+);
+router.post(
+  "/:serverId/configs/:name/disable",
+  requireTeamRole(["admin"]),
+  nginxController.disableConfig,
+);
 
 // Nginx operations
 router.post("/:serverId/test", nginxController.testConfig);
@@ -53,5 +70,13 @@ router.get("/:serverId/status", nginxController.getNginxStatus);
 
 // Logs
 router.get("/:serverId/logs/:type", nginxController.getLogs);
+
+// SSL
+router.post(
+  "/:serverId/ssl",
+  requireTeamRole(["admin"]),
+  nginxController.provisionSsl,
+);
+router.get("/:serverId/ssl", nginxController.listCertificates);
 
 export default router;

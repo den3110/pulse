@@ -10,7 +10,7 @@ class HealthCheckService {
   async init(): Promise<void> {
     const projects = await Project.find({
       status: "running",
-      healthCheckUrl: { $ne: "" },
+      "healthCheck.url": { $exists: true, $ne: "" },
     });
 
     for (const project of projects) {
@@ -28,9 +28,9 @@ class HealthCheckService {
     this.stopChecking(projectId);
 
     const project = await Project.findById(projectId);
-    if (!project || !project.healthCheckUrl) return;
+    if (!project || !project.healthCheck?.url) return;
 
-    const intervalMs = (project.healthCheckInterval || 60) * 1000;
+    const intervalMs = (project.healthCheck?.interval || 60) * 1000;
 
     // Do an immediate check
     await this.check(projectId);
@@ -59,42 +59,40 @@ class HealthCheckService {
    */
   async check(projectId: string): Promise<void> {
     const project = await Project.findById(projectId);
-    if (!project || !project.healthCheckUrl) return;
+    if (!project || !project.healthCheck?.url) return;
 
     const start = Date.now();
-    let status: "healthy" | "unhealthy" = "unhealthy";
+    let status: "up" | "down" = "down";
     let responseTime = 0;
 
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
 
-      const response = await fetch(project.healthCheckUrl, {
+      const response = await fetch(project.healthCheck.url, {
         method: "GET",
         signal: controller.signal,
       });
       clearTimeout(timeout);
 
       responseTime = Date.now() - start;
-      status = response.ok ? "healthy" : "unhealthy";
+      status = response.ok ? "up" : "down";
     } catch {
       responseTime = Date.now() - start;
-      status = "unhealthy";
+      status = "down";
     }
 
-    const prevStatus = project.lastHealthCheck?.status;
+    const prevStatus = project.healthCheck?.lastStatus;
 
     await Project.findByIdAndUpdate(projectId, {
-      lastHealthCheck: {
-        status,
-        checkedAt: new Date(),
-        responseTime,
-      },
+      "healthCheck.lastStatus": status,
+      "healthCheck.lastCheckedAt": new Date(),
+      "healthCheck.lastResponseTime": responseTime,
     });
 
     // Notify if status changed
     if (prevStatus && prevStatus !== status) {
-      const emoji = status === "healthy" ? "🟢" : "🔴";
+      const emoji = status === "up" ? "🟢" : "🔴";
       console.log(
         `[HealthCheck] ${emoji} ${project.name}: ${prevStatus} → ${status} (${responseTime}ms)`,
       );

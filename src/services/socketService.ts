@@ -272,6 +272,15 @@ export const emitServerStats = (serverId: string, stats: any) => {
   }
 };
 
+export const emitServerSnapshot = (serverId: string, snapshot: any) => {
+  if (io) {
+    io.to(`server:${serverId}`).emit("server:snapshot", {
+      serverId,
+      snapshot,
+    });
+  }
+};
+
 export const emitPM2Processes = (serverId: string, processes: any[]) => {
   if (io) {
     io.to(`pm2:${serverId}`).emit("pm2:processes", {

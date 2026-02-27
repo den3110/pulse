@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { protect } from "../middleware/auth";
+import { protect, requireTeamRole } from "../middleware/auth";
 import * as projectController from "../controllers/projectController";
 
 const router = Router();
@@ -14,16 +14,41 @@ router.post("/detect-branch", projectController.detectBranch);
 
 // CRUD
 router.get("/", projectController.listProjects);
-router.put("/reorder", projectController.reorderProjects);
+router.put(
+  "/reorder",
+  requireTeamRole(["admin", "editor"]),
+  projectController.reorderProjects,
+);
 router.get("/:id", projectController.getProject);
-router.post("/", projectController.createProject);
-router.put("/:id", projectController.updateProject);
-router.delete("/:id", projectController.deleteProject);
+router.post("/", requireTeamRole(["admin"]), projectController.createProject);
+router.put("/:id", requireTeamRole(["admin"]), projectController.updateProject);
+router.delete(
+  "/:id",
+  requireTeamRole(["admin"]),
+  projectController.deleteProject,
+);
 
 // Special operations
-router.put("/:id/save-restart", projectController.saveAndRestart);
-router.delete("/:id/output", projectController.deleteOutput);
+router.put(
+  "/:id/save-restart",
+  requireTeamRole(["admin", "editor"]),
+  projectController.saveAndRestart,
+);
+router.delete(
+  "/:id/output",
+  requireTeamRole(["admin", "editor"]),
+  projectController.deleteOutput,
+);
 router.get("/:id/webhook-url", projectController.getWebhookUrl);
-router.put("/:id/webhook-registered", projectController.setWebhookRegistered);
+router.put(
+  "/:id/webhook-registered",
+  requireTeamRole(["admin"]),
+  projectController.setWebhookRegistered,
+);
+router.put(
+  "/:id/health",
+  requireTeamRole(["admin"]),
+  projectController.updateHealthCheck,
+);
 
 export default router;

@@ -23,19 +23,22 @@ export interface IProject extends Document {
   githubRepoOwner?: string;
   githubRepoName?: string;
   githubRepoDefaultBranch?: string;
+  environment?: "node" | "python" | "static" | "docker-compose";
   status: "idle" | "deploying" | "running" | "stopped" | "failed";
   order: number;
   processManager: "nohup" | "pm2";
   lastDeployedAt?: Date;
-  healthCheckUrl?: string;
-  healthCheckInterval?: number;
-  lastHealthCheck?: {
-    status: "healthy" | "unhealthy" | "unknown";
-    checkedAt: Date;
-    responseTime?: number;
+  healthCheck: {
+    enabled: boolean;
+    url: string;
+    interval: number;
+    lastStatus: "up" | "down" | "unknown";
+    lastChecked?: Date;
+    errorMessage?: string;
   };
   scheduledDeployAt?: Date;
   owner: mongoose.Types.ObjectId;
+  team?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -119,6 +122,10 @@ const projectSchema = new Schema<IProject>(
     githubRepoOwner: String,
     githubRepoName: String,
     githubRepoDefaultBranch: String,
+    environment: {
+      type: String,
+      enum: ["node", "python", "static", "docker-compose"],
+    },
     webhookRegistered: {
       type: Boolean,
       default: false,
@@ -138,23 +145,17 @@ const projectSchema = new Schema<IProject>(
       default: "nohup",
     },
     lastDeployedAt: Date,
-    healthCheckUrl: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-    healthCheckInterval: {
-      type: Number,
-      default: 60,
-    },
-    lastHealthCheck: {
-      status: {
+    healthCheck: {
+      enabled: { type: Boolean, default: false },
+      url: { type: String, default: "", trim: true },
+      interval: { type: Number, default: 60 },
+      lastStatus: {
         type: String,
-        enum: ["healthy", "unhealthy", "unknown"],
+        enum: ["up", "down", "unknown"],
         default: "unknown",
       },
-      checkedAt: Date,
-      responseTime: Number,
+      lastChecked: { type: Date },
+      errorMessage: { type: String, default: "" },
     },
     preDeployCommand: {
       type: String,
@@ -174,6 +175,10 @@ const projectSchema = new Schema<IProject>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
+    },
+    team: {
+      type: Schema.Types.ObjectId,
+      ref: "Team",
     },
   },
   {

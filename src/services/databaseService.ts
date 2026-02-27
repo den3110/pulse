@@ -585,6 +585,84 @@ class DatabaseService {
     // I need to import sftpService.
     return null;
   }
+
+  /**
+   * Install a new database service via Docker
+   */
+  async installService(
+    serverId: string,
+    serviceType: string,
+    containerName: string,
+    dbPassword?: string,
+    dbUser?: string,
+  ): Promise<any> {
+    // Basic sanitization
+    if (!/^[a-zA-Z0-9_-]+$/.test(containerName)) {
+      throw new Error("Invalid container name");
+    }
+
+    let cmd = "";
+
+    // Check if Docker is installed
+    const dockerCheck = await sshService.exec(serverId, "command -v docker");
+    if (dockerCheck.code !== 0) {
+      // Auto-install docker (basic script for Ubuntu/Debian)
+      const installCmd =
+        "curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh";
+      const installRes = await sshService.exec(serverId, installCmd);
+      if (installRes.code !== 0) {
+        throw new Error(
+          "Failed to install Docker auto-magically. Please install Docker manually.",
+        );
+      }
+    }
+
+    switch (serviceType) {
+      case "postgres":
+        cmd = `docker run -d --name "${containerName}" --restart unless-stopped -e POSTGRES_PASSWORD="${dbPassword}" -e POSTGRES_USER="${dbUser || "postgres"}" -p 5432:5432 postgres:15`;
+        break;
+      case "mysql":
+        cmd = `docker run -d --name "${containerName}" --restart unless-stopped -e MYSQL_ROOT_PASSWORD="${dbPassword}" -e MYSQL_DATABASE="${dbUser || "app"}" -e MYSQL_USER="${dbUser || "app_user"}" -e MYSQL_PASSWORD="${dbPassword}" -p 3306:3306 mysql:8`;
+        break;
+      case "mongo":
+        cmd = `docker run -d --name "${containerName}" --restart unless-stopped -e MONGO_INITDB_ROOT_USERNAME="${dbUser || "admin"}" -e MONGO_INITDB_ROOT_PASSWORD="${dbPassword}" -p 27017:27017 mongo:6`;
+        break;
+      case "redis":
+        if (dbPassword) {
+          cmd = `docker run -d --name "${containerName}" --restart unless-stopped -p 6379:6379 redis:7 redis-server --requirepass "${dbPassword}"`;
+        } else {
+          cmd = `docker run -d --name "${containerName}" --restart unless-stopped -p 6379:6379 redis:7`;
+        }
+        break;
+      case "rabbitmq":
+        cmd = `docker run -d --name "${containerName}" --restart unless-stopped -e RABBITMQ_DEFAULT_USER="${dbUser || "admin"}" -e RABBITMQ_DEFAULT_PASS="${dbPassword}" -p 5672:5672 -p 15672:15672 rabbitmq:3-management`;
+        break;
+      default:
+        throw new Error(`Unsupported service type: ${serviceType}`);
+    }
+
+    const result = await sshService.exec(serverId, cmd);
+
+    if (result.code !== 0) {
+      if (
+        result.stderr.includes("Conflict. The container name") ||
+        result.stderr.includes("already in use")
+      ) {
+        throw new Error(`Container name '${containerName}' is already in use.`);
+      }
+      if (result.stderr.includes("port is already allocated")) {
+        throw new Error(
+          `A port required by ${serviceType} is already in use on this server.`,
+        );
+      }
+      throw new Error(`Failed to install service: ${result.stderr}`);
+    }
+
+    return {
+      message: "Service installed successfully",
+      containerId: result.stdout.trim(),
+    };
+  }
 }
 
 export default new DatabaseService();

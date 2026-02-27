@@ -59,6 +59,8 @@ class SchedulerService {
                 cpu: stats.cpuUsage || 0,
                 memory: stats.memoryUsage || 0,
                 disk: stats.diskUsage || 0,
+                rxBytes: stats.rxBytes || 0,
+                txBytes: stats.txBytes || 0,
                 timestamp: new Date(),
               });
             } catch (err) {

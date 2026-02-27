@@ -19,6 +19,7 @@ export interface IServer extends Document {
     diskTotal?: string;
   };
   owner: mongoose.Types.ObjectId;
+  team?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -81,6 +82,10 @@ const serverSchema = new Schema<IServer>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
+    },
+    team: {
+      type: Schema.Types.ObjectId,
+      ref: "Team",
     },
   },
   {

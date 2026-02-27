@@ -53,15 +53,23 @@ export class GitHubService {
   /**
    * Exchange temporary code for access token
    */
-  async exchangeCodeForToken(code: string): Promise<string> {
+  async exchangeCodeForToken(
+    code: string,
+    redirectUri?: string,
+  ): Promise<string> {
     try {
+      const payload: any = {
+        client_id: config.githubClientId,
+        client_secret: config.githubClientSecret,
+        code,
+      };
+      if (redirectUri) {
+        payload.redirect_uri = redirectUri;
+      }
+
       const response = await axios.post(
         "https://github.com/login/oauth/access_token",
-        {
-          client_id: config.githubClientId,
-          client_secret: config.githubClientSecret,
-          code,
-        },
+        payload,
         {
           headers: {
             Accept: "application/json",
@@ -81,7 +89,7 @@ export class GitHubService {
         "GitHub Token Exchange Error:",
         error.response?.data || error.message,
       );
-      throw new Error("Failed to exchange GitHub code for token");
+      throw error;
     }
   }
 
@@ -102,7 +110,26 @@ export class GitHubService {
       const response = await axios.get(`${this.baseUrl}/user`, {
         headers,
       });
-      return response.data;
+
+      let profile = response.data;
+
+      // If email is not public, fetch it from /user/emails
+      if (!profile.email) {
+        try {
+          const emailResponse = await axios.get(`${this.baseUrl}/user/emails`, {
+            headers,
+          });
+          const emails = emailResponse.data;
+          const primaryEmail = emails.find((e: any) => e.primary) || emails[0];
+          if (primaryEmail) {
+            profile.email = primaryEmail.email;
+          }
+        } catch (emailErr) {
+          console.error("Failed to fetch private GitHub emails", emailErr);
+        }
+      }
+
+      return profile;
     } catch (error: any) {
       console.error("GitHub Get User Error:", error.message);
       if (error.response) {

@@ -3,6 +3,7 @@ import ActivityLog from "../models/ActivityLog";
 interface LogParams {
   action: string;
   userId?: string;
+  team?: string;
   username?: string;
   details: string;
   ip?: string;

@@ -184,8 +184,11 @@ export const createProject = async (
       postDeployCommand: postDeployCommand || "",
       envVars: envVars || {},
       autoDeploy: autoDeploy || false,
-      healthCheckUrl: healthCheckUrl || "",
-      healthCheckInterval: healthCheckInterval || 60,
+      healthCheck: {
+        enabled: !!healthCheckUrl,
+        url: healthCheckUrl || "",
+        interval: healthCheckInterval || 60,
+      },
       webhookSecret,
       repoFolder: repoFolder || "",
       owner: req.user?._id,
@@ -197,6 +200,7 @@ export const createProject = async (
     logActivity({
       action: "project.create",
       userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
       username: req.user?.username,
       details: `Created project ${name}`,
       ip: req.ip,
@@ -250,8 +254,8 @@ export const updateProject = async (
         postDeployCommand,
         envVars,
         autoDeploy,
-        healthCheckUrl,
-        healthCheckInterval,
+        "healthCheck.url": healthCheckUrl,
+        "healthCheck.interval": healthCheckInterval,
         repoFolder,
       },
       { new: true, runValidators: true },
@@ -266,6 +270,7 @@ export const updateProject = async (
     logActivity({
       action: "project.update",
       userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
       username: req.user?.username,
       details: `Updated project ${project.name}`,
       ip: req.ip,
@@ -434,6 +439,7 @@ export const deleteProject = async (
     logActivity({
       action: "project.delete",
       userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
       username: req.user?.username,
       details: `Deleted project ${project.name}`,
       ip: req.ip,
@@ -590,6 +596,60 @@ export const browseFolders = async (
     res.json({
       folders,
       currentPath: subPath || "",
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateHealthCheck = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { enabled, url, interval } = req.body;
+    const project = await Project.findOne({
+      _id: req.params.id,
+      owner: req.user?._id,
+    });
+
+    if (!project) {
+      res.status(404).json({ message: "Project not found" });
+      return;
+    }
+
+    project.healthCheck = {
+      ...project.healthCheck,
+      enabled: !!enabled,
+      url: url || "",
+      interval: interval || 60,
+    };
+
+    // If suddenly disabled, clear the lastStatus so it doesn't linger ambiguously
+    if (!project.healthCheck.enabled) {
+      project.healthCheck.lastStatus = "unknown";
+      project.healthCheck.errorMessage = "";
+    }
+
+    await project.save();
+
+    // Dynamically notify uptime service
+    const uptimeService = (await import("../services/uptimeService"))
+      .uptimeService;
+    if (project.healthCheck.enabled && project.healthCheck.url) {
+      uptimeService.startMonitoring(project);
+    } else {
+      uptimeService.stopMonitoring(project._id.toString());
+    }
+
+    res.json(project);
+    logActivity({
+      action: "project.health",
+      userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
+      username: req.user?.username,
+      details: `Updated health check settings for project ${project.name}`,
+      ip: req.ip,
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });

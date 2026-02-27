@@ -15,6 +15,7 @@ class SSHService {
     string,
     { conn: Client; timer: ReturnType<typeof setTimeout> }
   >();
+  private pendingConnections = new Map<string, Promise<Client>>();
   private POOL_TTL = 5 * 60 * 1000; // 5 minutes idle timeout
 
   /**
@@ -32,12 +33,16 @@ class SSHService {
       return existing.conn;
     }
 
+    if (this.pendingConnections.has(serverId)) {
+      return this.pendingConnections.get(serverId)!;
+    }
+
     const server = await Server.findById(serverId).select(
       "+password +privateKey +passphrase",
     );
     if (!server) throw new Error("Server not found");
 
-    return new Promise((resolve, reject) => {
+    const connectPromise = new Promise<Client>((resolve, reject) => {
       const conn = new Client();
       const connectConfig = this.getConnectConfig(server);
 
@@ -47,6 +52,7 @@ class SSHService {
           this.POOL_TTL,
         );
         this.pool.set(serverId, { conn, timer });
+        this.pendingConnections.delete(serverId);
         resolve(conn);
       });
 
@@ -55,6 +61,7 @@ class SSHService {
           `[SSH] Connection error for ${server.host}: ${err.message}`,
         );
         this.pool.delete(serverId);
+        this.pendingConnections.delete(serverId);
         reject(new Error(`SSH connection failed: ${err.message}`));
       });
 
@@ -68,6 +75,9 @@ class SSHService {
 
       conn.connect(connectConfig);
     });
+
+    this.pendingConnections.set(serverId, connectPromise);
+    return connectPromise;
   }
 
   /**
@@ -243,6 +253,68 @@ class SSHService {
   }
 
   /**
+   * Execute a long-running command with streaming output
+   * Useful for logs (tail -f, docker logs -f)
+   * Returns a function to kill the stream early
+   */
+  async streamCommand(
+    serverId: string,
+    command: string,
+    onData: (data: string, type: "stdout" | "stderr") => void,
+    onClose?: (code: number) => void,
+  ): Promise<() => void> {
+    const server = await Server.findById(serverId).select(
+      "+password +privateKey +passphrase",
+    );
+    if (!server) throw new Error("Server not found");
+
+    return new Promise((resolve, reject) => {
+      const conn = new Client();
+      const connectConfig = this.getConnectConfig(server);
+
+      let sshStream: any = null;
+
+      conn.on("ready", () => {
+        conn.exec(command, (err, stream) => {
+          if (err) {
+            conn.end();
+            return reject(err);
+          }
+
+          sshStream = stream;
+
+          stream.on("data", (data: Buffer) => {
+            onData(data.toString(), "stdout");
+          });
+
+          stream.stderr.on("data", (data: Buffer) => {
+            onData(data.toString(), "stderr");
+          });
+
+          stream.on("close", (code: number) => {
+            conn.end();
+            if (onClose) onClose(code || 0);
+          });
+
+          // Resolve with the killer function
+          resolve(() => {
+            if (sshStream) {
+              sshStream.close();
+            }
+            conn.end();
+          });
+        });
+      });
+
+      conn.on("error", (err) => {
+        reject(new Error(`SSH connection failed: ${err.message}`));
+      });
+
+      conn.connect(connectConfig);
+    });
+  }
+
+  /**
    * Execute a command and stream output line-by-line
    */
   async execStreamLine(
@@ -373,6 +445,8 @@ class SSHService {
     memoryUsage: number;
     disk: { total: string; used: string; free: string; percent: string };
     diskUsage: number;
+    rxBytes: number;
+    txBytes: number;
     uptime: string;
     loadAvg: string;
   }> {
@@ -399,6 +473,9 @@ class SSHService {
 
       // 5. Load Avg
       "(cat /proc/loadavg | awk '{print $1, $2, $3}' || echo '0 0 0')",
+
+      // 6. Network bandwidth via /proc/net/dev (ignoring lo)
+      "(awk 'NR>2 && $1 !~ /lo:/ {rx+=$2; tx+=$10} END {print rx \"|\" tx}' /proc/net/dev || echo '0|0')",
     ];
 
     try {
@@ -429,6 +506,9 @@ class SSHService {
 
       const uptimeRaw = parts[3] || "unknown";
       const loadAvgRaw = parts[4] || "0 0 0";
+      const netParts = (parts[5] || "0|0").split("|");
+      const rxBytes = parseInt(netParts[0]) || 0;
+      const txBytes = parseInt(netParts[1]) || 0;
 
       // Convert disk blocks to GB string loosely if needed, but for now raw is fine or we format it.
       // actually, free -m returns MB. df -P returns Kb (usually).
@@ -467,6 +547,8 @@ class SSHService {
           percent: diskPercent,
         },
         diskUsage,
+        rxBytes,
+        txBytes,
         uptime: uptimeRaw,
         loadAvg: loadAvgRaw,
       };
@@ -480,6 +562,8 @@ class SSHService {
         memoryUsage: 0,
         disk: { total: "0", used: "0", free: "0", percent: "0%" },
         diskUsage: 0,
+        rxBytes: 0,
+        txBytes: 0,
         uptime: "error",
         loadAvg: "0 0 0",
       };

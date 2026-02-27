@@ -1,0 +1,46 @@
+[
+  {
+    "title": "Getting Started",
+    "items": [
+      { "id": "intro", "label": "Introduction" },
+      { "id": "quickstart", "label": "Quick Start" },
+      { "id": "architecture", "label": "Architecture" }
+    ]
+  },
+  {
+    "title": "Core Features",
+    "items": [
+      { "id": "servers", "label": "Server Management" },
+      { "id": "deployments", "label": "Deployments" },
+      { "id": "database", "label": "Database Studio" },
+      { "id": "nginx", "label": "NGINX Configs" }
+    ]
+  },
+  {
+    "title": "Advanced Tools",
+    "items": [
+      { "id": "vpn", "label": "Mesh VPN" },
+      { "id": "logs", "label": "Log Studio" },
+      { "id": "pipeline", "label": "CI/CD Pipelines" },
+      { "id": "testrunner", "label": "Test Runner" },
+      { "id": "map", "label": "Infrastructure Map" },
+      { "id": "command", "label": "Command Palette" }
+    ]
+  },
+  {
+    "title": "Process Managers",
+    "items": [
+      { "id": "docker", "label": "Docker Engine" },
+      { "id": "pm2", "label": "PM2 & Node.JS" },
+      { "id": "cron", "label": "Cron Scheduler" }
+    ]
+  },
+  {
+    "title": "Security & Settings",
+    "items": [
+      { "id": "security", "label": "Security Scanner" },
+      { "id": "teams", "label": "Team Collaboration" },
+      { "id": "ftp", "label": "FTP & Files" }
+    ]
+  }
+]

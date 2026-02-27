@@ -161,3 +161,21 @@ export const getSchema = async (req: Request, res: Response) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+export const installService = async (req: Request, res: Response) => {
+  try {
+    const serverId = req.params.serverId as string;
+    const { serviceType, containerName, dbPassword, dbUser } = req.body;
+
+    const result = await databaseService.installService(
+      serverId,
+      serviceType,
+      containerName,
+      dbPassword,
+      dbUser,
+    );
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};

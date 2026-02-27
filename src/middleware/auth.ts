@@ -69,3 +69,58 @@ export const adminOnly = (
     res.status(403).json({ message: "Not authorized, admin only" });
   }
 };
+
+import Team from "../models/Team";
+
+export const requireTeamRole = (roles: ("admin" | "editor" | "viewer")[]) => {
+  return async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ message: "Not authorized" });
+        return;
+      }
+
+      if (!req.user.currentTeam) {
+        // If not acting within a team, assume personal workspace/admin
+        next();
+        return;
+      }
+
+      const team = await Team.findById(req.user.currentTeam);
+      if (!team) {
+        res.status(403).json({ message: "Team not found" });
+        return;
+      }
+
+      // Check if user is owner
+      if (team.owner.toString() === req.user.id.toString()) {
+        next();
+        return;
+      }
+
+      // Check if user is member with specific role
+      const member = team.members.find(
+        (m) => m.user.toString() === req.user?.id.toString(),
+      );
+      if (!member) {
+        res.status(403).json({ message: "Not a member of this team" });
+        return;
+      }
+
+      if (!roles.includes(member.role as "admin" | "editor" | "viewer")) {
+        res
+          .status(403)
+          .json({ message: `Requires one of roles: ${roles.join(", ")}` });
+        return;
+      }
+
+      next();
+    } catch (error) {
+      res.status(500).json({ message: "Server error checking team role" });
+    }
+  };
+};

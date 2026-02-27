@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { protect } from "../middleware/auth";
+import { protect, requireTeamRole } from "../middleware/auth";
 import * as deploymentController from "../controllers/deploymentController";
 
 const router = Router();
@@ -10,15 +10,43 @@ router.use(protect);
 router.get("/", deploymentController.listRecent);
 
 // Deploy actions
-router.post("/:projectId/deploy", deploymentController.deploy);
-router.post("/:projectId/stop", deploymentController.stop);
-router.post("/:projectId/cancel", deploymentController.cancel);
-router.post("/:projectId/restart", deploymentController.restart);
-router.post("/:projectId/rollback", deploymentController.rollback);
+router.post(
+  "/:projectId/deploy",
+  requireTeamRole(["admin", "editor"]),
+  deploymentController.deploy,
+);
+router.post(
+  "/:projectId/stop",
+  requireTeamRole(["admin", "editor"]),
+  deploymentController.stop,
+);
+router.post(
+  "/:projectId/cancel",
+  requireTeamRole(["admin", "editor"]),
+  deploymentController.cancel,
+);
+router.post(
+  "/:projectId/restart",
+  requireTeamRole(["admin", "editor"]),
+  deploymentController.restart,
+);
+router.post(
+  "/:projectId/rollback",
+  requireTeamRole(["admin", "editor"]),
+  deploymentController.rollback,
+);
 
 // Scheduling
-router.post("/:projectId/schedule", deploymentController.schedule);
-router.delete("/:projectId/schedule", deploymentController.cancelSchedule);
+router.post(
+  "/:projectId/schedule",
+  requireTeamRole(["admin", "editor"]),
+  deploymentController.schedule,
+);
+router.delete(
+  "/:projectId/schedule",
+  requireTeamRole(["admin", "editor"]),
+  deploymentController.cancelSchedule,
+);
 
 // Info
 router.get("/:projectId/diff", deploymentController.getDiff);

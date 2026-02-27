@@ -23,6 +23,14 @@ export interface ISettings extends Document {
       serverOnline: boolean;
     };
   };
+  s3Storage?: {
+    enabled: boolean;
+    accessKeyId: string;
+    secretAccessKey: string;
+    endpoint: string;
+    region: string;
+    bucketName: string;
+  };
   updatedAt: Date;
 }
 
@@ -49,6 +57,14 @@ const settingsSchema = new Schema<ISettings>(
         serverOffline: { type: Boolean, default: true },
         serverOnline: { type: Boolean, default: true },
       },
+    },
+    s3Storage: {
+      enabled: { type: Boolean, default: false },
+      accessKeyId: { type: String, default: "" },
+      secretAccessKey: { type: String, default: "" },
+      endpoint: { type: String, default: "" },
+      region: { type: String, default: "" },
+      bucketName: { type: String, default: "" },
     },
   },
   {

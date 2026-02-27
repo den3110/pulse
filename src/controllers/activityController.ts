@@ -14,6 +14,14 @@ export const list = async (req: AuthRequest, res: Response): Promise<void> => {
       filter.action = action;
     }
 
+    // Isolate by Team vs Personal
+    if (req.user?.currentTeam) {
+      filter.team = req.user.currentTeam;
+    } else if (req.user) {
+      filter.userId = req.user._id;
+      filter.team = { $exists: false }; // Ensure it's not a team log
+    }
+
     const [activities, total] = await Promise.all([
       ActivityLog.find(filter)
         .sort({ createdAt: -1 })

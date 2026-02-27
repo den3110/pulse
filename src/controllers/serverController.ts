@@ -103,6 +103,7 @@ export const createServer = async (
     logActivity({
       action: "server.create",
       userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
       username: req.user?.username,
       details: `Created server ${name} (${host})`,
       ip: req.ip,
@@ -151,6 +152,7 @@ export const updateServer = async (
     logActivity({
       action: "server.update",
       userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
       username: req.user?.username,
       details: `Updated server ${server.name}`,
       ip: req.ip,
@@ -177,6 +179,7 @@ export const deleteServer = async (
     logActivity({
       action: "server.delete",
       userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
       username: req.user?.username,
       details: `Deleted server ${server.name}`,
       ip: req.ip,
@@ -311,7 +314,7 @@ export const execCommand = async (
       req.params.id as string,
       command,
       timeout,
-      { pty: true },
+      { pty: false },
     );
     res.json(result);
   } catch (error: any) {

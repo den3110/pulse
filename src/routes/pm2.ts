@@ -1,5 +1,5 @@
 import { Router, Response } from "express";
-import { protect, AuthRequest } from "../middleware/auth";
+import { protect, AuthRequest, requireTeamRole } from "../middleware/auth";
 import Server from "../models/Server";
 import * as pm2Controller from "../controllers/pm2Controller";
 
@@ -36,22 +36,66 @@ router.use("/:serverId", verifyServer as any);
 router.get("/:serverId/processes", pm2Controller.listProcesses);
 
 // Start a new process
-router.post("/:serverId/start", pm2Controller.startProcess);
+router.post(
+  "/:serverId/start",
+  requireTeamRole(["admin", "editor"]),
+  pm2Controller.startProcess,
+);
 
 // Bulk operations
-router.post("/:serverId/restart-all", pm2Controller.restartAll);
-router.post("/:serverId/stop-all", pm2Controller.stopAll);
-router.post("/:serverId/save", pm2Controller.save);
-router.post("/:serverId/startup", pm2Controller.startup);
-router.post("/:serverId/flush", pm2Controller.flushLogs);
+router.post(
+  "/:serverId/restart-all",
+  requireTeamRole(["admin", "editor"]),
+  pm2Controller.restartAll,
+);
+router.post(
+  "/:serverId/stop-all",
+  requireTeamRole(["admin", "editor"]),
+  pm2Controller.stopAll,
+);
+router.post(
+  "/:serverId/save",
+  requireTeamRole(["admin", "editor"]),
+  pm2Controller.save,
+);
+router.post(
+  "/:serverId/startup",
+  requireTeamRole(["admin"]),
+  pm2Controller.startup,
+);
+router.post(
+  "/:serverId/flush",
+  requireTeamRole(["admin", "editor"]),
+  pm2Controller.flushLogs,
+);
 
 // Per-process operations
-router.post("/:serverId/:name/stop", pm2Controller.stopProcess);
-router.post("/:serverId/:name/restart", pm2Controller.restartProcess);
-router.post("/:serverId/:name/reload", pm2Controller.reloadProcess);
-router.post("/:serverId/:name/delete", pm2Controller.deleteProcess);
+router.post(
+  "/:serverId/:name/stop",
+  requireTeamRole(["admin", "editor"]),
+  pm2Controller.stopProcess,
+);
+router.post(
+  "/:serverId/:name/restart",
+  requireTeamRole(["admin", "editor"]),
+  pm2Controller.restartProcess,
+);
+router.post(
+  "/:serverId/:name/reload",
+  requireTeamRole(["admin", "editor"]),
+  pm2Controller.reloadProcess,
+);
+router.post(
+  "/:serverId/:name/delete",
+  requireTeamRole(["admin"]),
+  pm2Controller.deleteProcess,
+);
 router.get("/:serverId/:name/logs", pm2Controller.getLogs);
 router.get("/:serverId/:name/logs/stream", pm2Controller.streamLogs);
-router.post("/:serverId/:name/flush", pm2Controller.flushLogs);
+router.post(
+  "/:serverId/:name/flush",
+  requireTeamRole(["admin", "editor"]),
+  pm2Controller.flushLogs,
+);
 
 export default router;

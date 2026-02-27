@@ -1,6 +1,7 @@
 import sshService from "./sshService";
 import ServerSnapshot from "../models/ServerSnapshot";
 import logger from "../utils/logger";
+import { emitServerSnapshot } from "./socketService";
 
 class SnapshotService {
   /**
@@ -88,6 +89,10 @@ class SnapshotService {
       });
 
       await snapshot.save();
+
+      // Emit the real-time snapshot to connected clients watching this server
+      emitServerSnapshot(serverId, snapshot);
+
       logger.info(
         `[Snapshot] Successfully captured and saved snapshot for server ${serverId}`,
       );

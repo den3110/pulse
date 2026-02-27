@@ -47,6 +47,7 @@ export const deploy = async (
     logActivity({
       action: "deploy",
       userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
       username: req.user?.username,
       details: `Deployed project ${project.name}`,
       ip: req.ip,
@@ -70,6 +71,7 @@ export const stop = async (req: AuthRequest, res: Response): Promise<void> => {
     logActivity({
       action: "stop",
       userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
       username: req.user?.username,
       details: `Stopped project ${project.name}`,
       ip: req.ip,
@@ -118,6 +120,7 @@ export const restart = async (
     logActivity({
       action: "restart",
       userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
       username: req.user?.username,
       details: `Restarted project ${project.name}`,
       ip: req.ip,
@@ -154,8 +157,9 @@ export const rollback = async (
     logActivity({
       action: "rollback",
       userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
       username: req.user?.username,
-      details: `Rollback project ${project.name} to ${commitHash}`,
+      details: `Rollback project ${project.name} to ${commitHash.substring(0, 7)}`,
       ip: req.ip,
     });
   } catch (error: any) {

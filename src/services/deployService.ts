@@ -11,6 +11,7 @@ import {
   emitNotification,
 } from "./socketService";
 import logger from "../utils/logger";
+import { sendDeploymentAlert } from "./alertService";
 
 class DeployService {
   private activeDeploys: Set<string> = new Set();
@@ -260,8 +261,8 @@ class DeployService {
         );
       }
 
-      // Step 3: Install dependencies
-      if (project.installCommand) {
+      // Step 3: Install dependencies (Skip for Docker Compose)
+      if (project.installCommand && project.environment !== "docker-compose") {
         await this.updateStatus(deploymentId, "installing", pid);
         emitDeployLog(
           deploymentId,
@@ -283,8 +284,8 @@ class DeployService {
         );
       }
 
-      // Step 4: Build
-      if (project.buildCommand) {
+      // Step 4: Build (Skip for Docker Compose)
+      if (project.buildCommand && project.environment !== "docker-compose") {
         await this.updateStatus(deploymentId, "building", pid);
         emitDeployLog(
           deploymentId,
@@ -301,8 +302,8 @@ class DeployService {
         emitDeployLog(deploymentId, "✅ Build completed", "success", pid);
       }
 
-      // Step 4.5: Copy to output path if configured
-      if (project.outputPath) {
+      // Step 4.5: Copy to output path if configured (Skip for Docker Compose)
+      if (project.outputPath && project.environment !== "docker-compose") {
         emitDeployLog(
           deploymentId,
           `📂 Copying build output to ${project.outputPath}...`,
@@ -334,17 +335,24 @@ class DeployService {
         pid,
       );
       try {
-        if (project.stopCommand) {
+        if (project.environment === "docker-compose") {
           await sshService.exec(
             serverId,
-            `cd ${deployPath} && ${project.stopCommand}`,
+            `cd ${workDir} && docker compose down`,
+          );
+        } else {
+          if (project.stopCommand) {
+            await sshService.exec(
+              serverId,
+              `cd ${deployPath} && ${project.stopCommand}`,
+            );
+          }
+          // Also kill by PID file (fallback)
+          await sshService.exec(
+            serverId,
+            `if [ -f "${workDir}/.deploy.pid" ]; then kill $(cat "${workDir}/.deploy.pid") 2>/dev/null; rm -f "${workDir}/.deploy.pid"; fi`,
           );
         }
-        // Also kill by PID file (fallback)
-        await sshService.exec(
-          serverId,
-          `if [ -f "${workDir}/.deploy.pid" ]; then kill $(cat "${workDir}/.deploy.pid") 2>/dev/null; rm -f "${workDir}/.deploy.pid"; fi`,
-        );
       } catch (e) {
         // Ignore stop errors (process might not be running)
       }
@@ -359,7 +367,41 @@ class DeployService {
           pid,
         );
 
-        if (project.processManager === "pm2") {
+        if (project.environment === "docker-compose") {
+          emitDeployLog(
+            deploymentId,
+            `🐳 Using Docker Compose to manage process`,
+            "info",
+            pid,
+          );
+
+          // docker compose up -d --build
+          await this.execWithLogs(
+            serverId,
+            deploymentId,
+            `cd ${workDir} && docker compose up -d --build`,
+            pid,
+          );
+
+          // Verify containers are running
+          try {
+            await sshService.exec(
+              serverId,
+              `cd ${workDir} && docker compose ps | grep "Up"`,
+            );
+          } catch (e) {
+            throw new Error(
+              "Service failed to start (Docker Compose containers not running)",
+            );
+          }
+
+          emitDeployLog(
+            deploymentId,
+            "✅ Service started with Docker Compose!",
+            "success",
+            pid,
+          );
+        } else if (project.processManager === "pm2") {
           // PM2 Logic
           const pm2Name = project.name;
           emitDeployLog(
@@ -488,6 +530,18 @@ class DeployService {
       // Send Notification on success
       await this.sendNotification(project.name, "success", deploymentId);
 
+      // Send webhook alert on success
+      try {
+        const owner = await User.findById(project.owner).select(
+          "+alertPreferences",
+        );
+        if (owner && owner.alertPreferences) {
+          await sendDeploymentAlert(project, "success", owner.alertPreferences);
+        }
+      } catch (e) {
+        logger.error(`Failed to trigger success alert: ${e}`);
+      }
+
       // Update GitHub Status - Success
       // We need hash here.
       // But hash was local variable.
@@ -569,6 +623,18 @@ class DeployService {
         deploymentId,
         error.message,
       );
+
+      // Send webhook alert on failure
+      try {
+        const owner = await User.findById(project.owner).select(
+          "+alertPreferences",
+        );
+        if (owner && owner.alertPreferences) {
+          await sendDeploymentAlert(project, "failed", owner.alertPreferences);
+        }
+      } catch (e) {
+        logger.error(`Failed to trigger failure alert: ${e}`);
+      }
 
       // Create in-app notification for all users
       if (!isCancelled) {

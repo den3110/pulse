@@ -3,6 +3,7 @@ import mongoose, { Document, Schema } from "mongoose";
 export interface IActivityLog extends Document {
   action: string;
   userId?: mongoose.Types.ObjectId;
+  team?: mongoose.Types.ObjectId;
   username?: string;
   details: string;
   ip?: string;
@@ -27,8 +28,11 @@ const activityLogSchema = new Schema<IActivityLog>(
         "project.create",
         "project.update",
         "project.delete",
+        "project.health",
         "nginx.update",
+        "ssl.provision",
         "settings.update",
+        "database.install",
         "user.create",
         "user.update",
         "user.delete",
@@ -36,6 +40,7 @@ const activityLogSchema = new Schema<IActivityLog>(
       ],
     },
     userId: { type: Schema.Types.ObjectId, ref: "User" },
+    team: { type: Schema.Types.ObjectId, ref: "Team" },
     username: { type: String },
     details: { type: String, required: true },
     ip: { type: String },
@@ -53,5 +58,6 @@ activityLogSchema.index(
 );
 activityLogSchema.index({ action: 1 });
 activityLogSchema.index({ userId: 1 });
+activityLogSchema.index({ team: 1 });
 
 export default mongoose.model<IActivityLog>("ActivityLog", activityLogSchema);

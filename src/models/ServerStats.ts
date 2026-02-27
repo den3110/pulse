@@ -5,6 +5,8 @@ export interface IServerStats extends Document {
   cpu: number;
   memory: number;
   disk: number;
+  rxBytes?: number;
+  txBytes?: number;
   timestamp: Date;
 }
 
@@ -19,6 +21,8 @@ const serverStatsSchema = new Schema<IServerStats>(
     cpu: { type: Number, required: true },
     memory: { type: Number, required: true },
     disk: { type: Number, required: true },
+    rxBytes: { type: Number, default: 0 },
+    txBytes: { type: Number, default: 0 },
     timestamp: { type: Date, default: Date.now },
   },
   {

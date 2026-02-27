@@ -47,6 +47,7 @@ export const createUser = async (
     await logActivity({
       action: "user.create",
       userId: req.user._id.toString(),
+      team: req.user.currentTeam?.toString(),
       username: req.user.username,
       details: `Created user ${username}`,
       ip: req.ip,
@@ -85,6 +86,7 @@ export const updateUser = async (
     await logActivity({
       action: "user.update",
       userId: req.user._id.toString(),
+      team: req.user.currentTeam?.toString(),
       username: req.user.username,
       details: `Updated user ${user.username}`,
       ip: req.ip,
@@ -118,6 +120,7 @@ export const deleteUser = async (
     await logActivity({
       action: "user.delete",
       userId: req.user._id.toString(),
+      team: req.user.currentTeam?.toString(),
       username: req.user.username,
       details: `Deleted user ${user.username}`,
       ip: req.ip,
@@ -155,6 +158,7 @@ export const resetPassword = async (
     await logActivity({
       action: "password.change",
       userId: req.user._id.toString(),
+      team: req.user.currentTeam?.toString(),
       username: req.user.username,
       details: `Reset password for ${user.username}`,
       ip: req.ip,

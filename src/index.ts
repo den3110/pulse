@@ -10,6 +10,8 @@ import portRoutes from "./routes/portRoutes"; // Added import
 import schedulerService from "./services/schedulerService";
 import gitPollingService from "./services/gitPollingService";
 import healthCheckService from "./services/healthCheckService";
+import { uptimeService } from "./services/uptimeService";
+import backupScheduler from "./services/backupScheduler";
 import { protect } from "./middleware/auth";
 
 // Routes
@@ -27,6 +29,20 @@ import activityRoutes from "./routes/activity";
 import adminRoutes from "./routes/admin";
 import ftpRoutes from "./routes/ftp";
 import databaseRoutes from "./routes/database";
+import billingRoutes from "./routes/billing";
+import docsRoutes from "./routes/docs";
+import teamRoutes from "./routes/teams";
+import dockerRoutes from "./routes/docker";
+import topologyRoutes from "./routes/topology";
+import analyticsRoutes from "./routes/analytics";
+import aiRoutes from "./routes/ai";
+import approvalRoutes from "./routes/approvals";
+import secretRoutes from "./routes/secrets";
+import webhookDebugRoutes from "./routes/webhookDebug";
+import testRunnerRoutes from "./routes/testRunner";
+import pipelineRoutes from "./routes/pipelines";
+import vpnRoutes from "./routes/vpn";
+import logRoutes from "./routes/logs";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -39,7 +55,11 @@ initSocket(server);
 app.use(helmet());
 app.use((req, res, next) => {
   // Pass-through for webhooks to avoid CORS issues from external services like GitHub
-  if (req.path.startsWith("/api/webhook")) {
+  // Ensure we don't accidentally bypass CORS for internal debugging endpoints like /api/webhook-debug
+  if (
+    req.path.startsWith("/api/webhook") &&
+    !req.path.startsWith("/api/webhook-debug")
+  ) {
     return next();
   }
   cors({
@@ -71,7 +91,9 @@ const limiter = rateLimit({
   message: "Too many requests, please try again later.",
   // Skip rate limiting for webhooks and health checks
   skip: (req) =>
-    req.path.startsWith("/api/webhook") || req.path === "/api/health",
+    (req.path.startsWith("/api/webhook") &&
+      !req.path.startsWith("/api/webhook-debug")) ||
+    req.path === "/api/health",
 });
 app.use("/api/", limiter);
 
@@ -91,6 +113,20 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/ftp", ftpRoutes);
 app.use("/api/database", databaseRoutes);
 app.use("/api/ports", portRoutes);
+app.use("/api/billing", billingRoutes);
+app.use("/api/docs", docsRoutes);
+app.use("/api/teams", teamRoutes);
+app.use("/api/docker", dockerRoutes);
+app.use("/api/topology", topologyRoutes);
+app.use("/api/analytics", analyticsRoutes);
+app.use("/api/ai", aiRoutes);
+app.use("/api/approvals", approvalRoutes);
+app.use("/api/secrets", secretRoutes);
+app.use("/api/webhook-debug", webhookDebugRoutes);
+app.use("/api/test-runner", testRunnerRoutes);
+app.use("/api/pipelines", pipelineRoutes);
+app.use("/api/vpn", vpnRoutes);
+app.use("/api/logs", logRoutes);
 
 // Health check
 app.get("/api/health", (_req, res) => {
@@ -201,6 +237,12 @@ const start = async () => {
 
     // Initialize health checks for running projects
     await healthCheckService.init();
+
+    // Initialize the background uptime monitor for configured projects
+    await uptimeService.initAllMonitors();
+
+    // Initialize automated DB backup schedules
+    await backupScheduler.init();
 
     server.listen(config.port, () => {
       console.log(`[Server] Running on port ${config.port}`);

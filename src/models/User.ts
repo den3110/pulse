@@ -8,10 +8,22 @@ export interface IUser extends Document {
   role: "admin" | "viewer";
   refreshTokens?: string[];
   activeServer?: string;
+  currentTeam?: mongoose.Types.ObjectId;
   githubId?: string;
   githubUsername?: string;
   githubAccessToken?: string;
   githubAvatarUrl?: string;
+  googleId?: string;
+  googleAvatarUrl?: string;
+  planType: "free" | "pro" | "enterprise";
+  stripeCustomerId?: string;
+  subscriptionStatus: "active" | "past_due" | "canceled" | "trialing";
+  twoFactorSecret?: string;
+  isTwoFactorEnabled: boolean;
+  alertPreferences?: {
+    slackWebhookUrl?: string;
+    discordWebhookUrl?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -54,6 +66,10 @@ const userSchema = new Schema<IUser>(
       type: Schema.Types.ObjectId,
       ref: "Server",
     },
+    currentTeam: {
+      type: Schema.Types.ObjectId,
+      ref: "Team",
+    },
     githubId: {
       type: String,
       unique: true,
@@ -62,6 +78,38 @@ const userSchema = new Schema<IUser>(
     githubUsername: String,
     githubAccessToken: String,
     githubAvatarUrl: String,
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    googleAvatarUrl: String,
+    planType: {
+      type: String,
+      enum: ["free", "pro", "enterprise"],
+      default: "free",
+    },
+    stripeCustomerId: {
+      type: String,
+      sparse: true,
+    },
+    subscriptionStatus: {
+      type: String,
+      enum: ["active", "past_due", "canceled", "trialing"],
+      default: "active",
+    },
+    twoFactorSecret: {
+      type: String,
+      select: false,
+    },
+    isTwoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    alertPreferences: {
+      slackWebhookUrl: { type: String, trim: true },
+      discordWebhookUrl: { type: String, trim: true },
+    },
   },
   {
     timestamps: true,

@@ -1,5 +1,5 @@
 import { Router, Response } from "express";
-import { protect, AuthRequest } from "../middleware/auth";
+import { protect, AuthRequest, requireTeamRole } from "../middleware/auth";
 import Server from "../models/Server";
 import multer from "multer";
 import * as ftpController from "../controllers/ftpController";
@@ -40,9 +40,14 @@ router.use("/:serverId", verifyServer as any);
 // File browser
 router.get("/:serverId/list", ftpController.listDirectory);
 router.get("/:serverId/read", ftpController.readFile);
-router.post("/:serverId/write", ftpController.writeFile);
+router.post(
+  "/:serverId/write",
+  requireTeamRole(["admin", "editor"]),
+  ftpController.writeFile,
+);
 router.post(
   "/:serverId/upload",
+  requireTeamRole(["admin", "editor"]),
   upload.single("file"),
   ftpController.uploadFile,
 );
@@ -50,18 +55,50 @@ router.get("/:serverId/download", ftpController.downloadFile);
 router.get("/:serverId/preview", ftpController.previewFile);
 
 // File operations
-router.delete("/:serverId/file", ftpController.deleteItem);
-router.post("/:serverId/mkdir", ftpController.createDirectory);
-router.post("/:serverId/rename", ftpController.renameItem);
+router.delete(
+  "/:serverId/file",
+  requireTeamRole(["admin", "editor"]),
+  ftpController.deleteItem,
+);
+router.post(
+  "/:serverId/mkdir",
+  requireTeamRole(["admin", "editor"]),
+  ftpController.createDirectory,
+);
+router.post(
+  "/:serverId/rename",
+  requireTeamRole(["admin", "editor"]),
+  ftpController.renameItem,
+);
 router.get("/:serverId/stats", ftpController.getStats);
-router.post("/:serverId/chmod", ftpController.chmod);
-router.post("/:serverId/copy", ftpController.copyItem);
-router.post("/:serverId/zip", ftpController.zipItems);
-router.post("/:serverId/unzip", ftpController.unzipArchive);
+router.post(
+  "/:serverId/chmod",
+  requireTeamRole(["admin", "editor"]),
+  ftpController.chmod,
+);
+router.post(
+  "/:serverId/copy",
+  requireTeamRole(["admin", "editor"]),
+  ftpController.copyItem,
+);
+router.post(
+  "/:serverId/zip",
+  requireTeamRole(["admin", "editor"]),
+  ftpController.zipItems,
+);
+router.post(
+  "/:serverId/unzip",
+  requireTeamRole(["admin", "editor"]),
+  ftpController.unzipArchive,
+);
 router.get("/:serverId/disk", ftpController.getDiskUsage);
 router.get("/:serverId/dir-size", ftpController.getDirSize);
 router.get("/:serverId/dir-sizes", ftpController.getDirSizes);
 router.post("/:serverId/dir-sizes", ftpController.getDirSizes);
-router.post("/:serverId/delete-multiple", ftpController.deleteMultiple);
+router.post(
+  "/:serverId/delete-multiple",
+  requireTeamRole(["admin", "editor"]),
+  ftpController.deleteMultiple,
+);
 
 export default router;
