@@ -1,0 +1,22 @@
+/tmp/clip/internal/config/config.go:27:type Config struct {
+/tmp/clip/internal/config/config.go-28-	SDKConfig `yaml:",inline"`
+/tmp/clip/internal/config/config.go-29-	// Host is the network host/interface on which the API server will bind.
+/tmp/clip/internal/config/config.go-30-	// Default is empty ("") to bind all interfaces (IPv4 + IPv6). Use "127.0.0.1" or "localhost" for local-only access.
+/tmp/clip/internal/config/config.go-31-	Host string `yaml:"host" json:"-"`
+/tmp/clip/internal/config/config.go-32-	// Port is the network port on which the API server will listen.
+/tmp/clip/internal/config/config.go-33-	Port int `yaml:"port" json:"-"`
+/tmp/clip/internal/config/config.go-34-
+/tmp/clip/internal/config/config.go-35-	// TLS config controls HTTPS server settings.
+/tmp/clip/internal/config/config.go-36-	TLS TLSConfig `yaml:"tls" json:"tls"`
+/tmp/clip/internal/config/config.go-37-
+/tmp/clip/internal/config/config.go-38-	// RemoteManagement nests management-related options under 'remote-management'.
+/tmp/clip/internal/config/config.go-39-	RemoteManagement RemoteManagement `yaml:"remote-management" json:"-"`
+/tmp/clip/internal/config/config.go-40-
+/tmp/clip/internal/config/config.go-41-	// AuthDir is the directory where authentication token files are stored.
+/tmp/clip/internal/config/config.go-42-	AuthDir string `yaml:"auth-dir" json:"-"`
+/tmp/clip/internal/config/config.go-43-
+/tmp/clip/internal/config/config.go-44-	// Debug enables or disables debug-level logging and other debug features.
+/tmp/clip/internal/config/config.go-45-	Debug bool `yaml:"debug" json:"debug"`
+/tmp/clip/internal/config/config.go-46-
+/tmp/clip/internal/config/config.go-47-	// Pprof config controls the optional pprof HTTP debug server.
+

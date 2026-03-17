@@ -1,0 +1,41 @@
+HOSTNAME=srv1433647
+HOME=/root
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PWD=/root/.cli-proxy-api
+CLIProxyAPI Version: 6.8.45, Commit: 2695a99, BuiltAt: 2026-03-06T03:09:29Z
+
+Container cliproxyapi-cliproxyapi-run-58101e9cf18b Creating 
+ Container cliproxyapi-cliproxyapi-run-58101e9cf18b Created 
+Usage of /usr/local/bin/cli-proxy-api
+  -antigravity-login
+    Login to Antigravity using OAuth
+  -claude-login
+    Login to Claude using OAuth
+  -codex-device-login
+    Login to Codex using device code flow
+  -codex-login
+    Login to Codex using OAuth
+  -config string
+    Configure File Path
+  -iflow-cookie
+    Login to iFlow using Cookie
+  -iflow-login
+    Login to iFlow using OAuth
+  -kimi-login
+    Login to Kimi using OAuth
+  -login
+    Login Google Account
+  -no-browser
+    Don't open browser automatically for OAuth
+  -oauth-callback-port int
+    Override OAuth callback port (defaults to provider-specific port)
+  -project_id string
+    Project ID (Gemini only, not required)
+  -qwen-login
+    Login to Qwen using OAuth
+  -standalone
+    In TUI mode, start an embedded local server
+  -tui
+    Start with terminal management UI
+  -vertex-import string
+    Import Vertex service account key JSON file

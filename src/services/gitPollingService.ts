@@ -46,7 +46,14 @@ class GitPollingService {
         autoDeploy: true,
         webhookRegistered: { $ne: true },
         status: {
-          $nin: ["deploying", "building", "cloning", "installing", "starting"],
+          $nin: [
+            "deploying",
+            "building",
+            "cloning",
+            "installing",
+            "starting",
+            "stopped",
+          ],
         },
       }).populate("server");
 
@@ -72,6 +79,64 @@ class GitPollingService {
     if (!serverId) return;
 
     const deployPath = project.deployPath;
+
+    // ======== LOCAL FOLDER MONITORING ========
+    if (project.sourceType === "local") {
+      // Find the most recently modified file inside the deployPath
+      // Excludes build output dirs to prevent deploy → new files → re-deploy infinite loop
+      const excludeDirs = [
+        "node_modules",
+        ".git",
+        "dist",
+        "build",
+        ".next",
+        ".nuxt",
+        ".cache",
+        ".turbo",
+        "logs",
+        "tmp",
+        ".tmp",
+        "coverage",
+      ]
+        .map((d) => `-not -path "*/${d}/*"`)
+        .join(" -and ");
+      const cmd = `find "${deployPath}" -type f \\( ${excludeDirs} \\) -printf "%T@\\n" 2>/dev/null | sort -nr | head -n 1`;
+
+      const result = await sshService.exec(serverId, cmd);
+      const latestTimestamp = result.stdout.trim();
+
+      if (!latestTimestamp) {
+        // Empty folder or error
+        return;
+      }
+
+      const storedTimestamp = project.lastFolderTimestamp || "";
+
+      if (storedTimestamp && storedTimestamp !== latestTimestamp) {
+        console.log(
+          `[Polling] Local folder change detected in "${project.name}" (Timestamp: ${latestTimestamp}). Triggering deploy...`,
+        );
+        project.lastFolderTimestamp = latestTimestamp;
+        await project.save();
+        await deployService.deploy(project._id.toString(), "webhook");
+
+        // Re-check timestamp after deploy to capture any files modified by the build process
+        // This prevents the next poll cycle from seeing build artifacts as "new changes"
+        const postDeployResult = await sshService.exec(serverId, cmd);
+        const postDeployTimestamp = postDeployResult.stdout.trim();
+        if (postDeployTimestamp && postDeployTimestamp !== latestTimestamp) {
+          project.lastFolderTimestamp = postDeployTimestamp;
+          await project.save();
+        }
+      } else if (!storedTimestamp) {
+        // Initial setup
+        project.lastFolderTimestamp = latestTimestamp;
+        await project.save();
+      }
+      return;
+    }
+
+    // ======== GIT REPO MONITORING ========
     const branch = project.branch;
 
     // Check if repo exists on server
@@ -107,7 +172,7 @@ class GitPollingService {
     // Compare: if different, there are new commits → auto-deploy
     if (localCommit && remoteCommit && localCommit !== remoteCommit) {
       console.log(
-        `[GitPolling] New commits detected for "${project.name}" (${localCommit.slice(0, 7)} → ${remoteCommit.slice(0, 7)}). Triggering deploy...`,
+        `[Polling] New commits detected for "${project.name}" (${localCommit.slice(0, 7)} → ${remoteCommit.slice(0, 7)}). Triggering deploy...`,
       );
       await deployService.deploy(project._id.toString(), "webhook");
     }

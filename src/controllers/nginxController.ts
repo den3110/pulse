@@ -141,6 +141,21 @@ export const testConfig = async (
   }
 };
 
+export const testConfigFile = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const result = await nginxService.testConfigFile(
+      req.params.serverId as string,
+      req.params.name as string,
+    );
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 export const reloadNginx = async (
   req: AuthRequest,
   res: Response,
@@ -216,6 +231,67 @@ export const saveAndReload = async (
   }
 };
 
+export const generateAndSaveConfig = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { blocks, ...singleBlock } = req.body;
+
+    // Support both single block (legacy) and multi-block array
+    const configBlocks =
+      blocks && Array.isArray(blocks) && blocks.length > 0
+        ? blocks
+        : [singleBlock];
+
+    // Validate each block
+    for (const block of configBlocks) {
+      const { domains, type = "proxy", proxyPass, rootPath } = block;
+      if (!domains || !domains.length) {
+        res
+          .status(400)
+          .json({ message: "At least one domain is required per block" });
+        return;
+      }
+      if (type === "proxy" && !proxyPass) {
+        res.status(400).json({
+          message: `Proxy Pass URL is required for "${domains.join(", ")}"`,
+        });
+        return;
+      }
+      if (type === "static" && !rootPath) {
+        res.status(400).json({
+          message: `Root Path is required for "${domains.join(", ")}"`,
+        });
+        return;
+      }
+    }
+
+    const configContent = nginxService.generateMultiConfig(configBlocks);
+
+    // Use the first domain of the first block as the config filename
+    const firstDomains = configBlocks[0].domains;
+    const filename = firstDomains[0].replace(/[^a-zA-Z0-9.-]/g, "");
+
+    const result = await nginxService.saveAndReload(
+      req.params.serverId as string,
+      filename,
+      configContent,
+    );
+    res.json(result);
+
+    logActivity({
+      action: "nginx.generate",
+      userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
+      username: req.user?.username,
+      details: `Generated Nginx config (${configBlocks.length} block${configBlocks.length > 1 ? "s" : ""}) for ${firstDomains.join(", ")}`,
+      ip: req.ip,
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 export const provisionSsl = async (
   req: AuthRequest,
@@ -224,11 +300,11 @@ export const provisionSsl = async (
   try {
     const { domain, email } = req.body;
     if (!domain || !email) {
-      res.status(400).json({ message: 'Domain and email are required' });
+      res.status(400).json({ message: "Domain and email are required" });
       return;
     }
 
-    const { default: sslService } = await import('../services/sslService');
+    const { default: sslService } = await import("../services/sslService");
     const result = await sslService.provisionSsl(
       req.params.serverId as string,
       domain,
@@ -252,7 +328,7 @@ export const listCertificates = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const { default: sslService } = await import('../services/sslService');
+    const { default: sslService } = await import("../services/sslService");
     const result = await sslService.listCertificates(
       req.params.serverId as string,
     );
@@ -262,3 +338,54 @@ export const listCertificates = async (
   }
 };
 
+export const checkNginxInstalled = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const result = await nginxService.checkNginxInstalled(
+      req.params.serverId as string,
+    );
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const installNginx = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  // SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  try {
+    await nginxService.installNginx(
+      req.params.serverId as string,
+      (line: string) => {
+        res.write(`data: ${JSON.stringify({ line })}\n\n`);
+      },
+    );
+    res.write(
+      `event: complete\ndata: ${JSON.stringify({ message: "Nginx installed successfully" })}\n\n`,
+    );
+
+    logActivity({
+      action: "nginx.install",
+      userId: req.user?._id.toString(),
+      team: req.user?.currentTeam?.toString(),
+      username: req.user?.username,
+      details: `Installed Nginx on server`,
+      ip: req.ip,
+    });
+  } catch (error: any) {
+    res.write(
+      `event: error\ndata: ${JSON.stringify({ message: error.message })}\n\n`,
+    );
+  } finally {
+    res.end();
+  }
+};

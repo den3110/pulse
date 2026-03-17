@@ -1,0 +1,39 @@
+--- DOCKER LOGS ---
+HOSTNAME=srv1433647
+HOME=/root
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PWD=/root/.cli-proxy-api
+CLIProxyAPI Version: 6.8.45, Commit: 2695a99, BuiltAt: 2026-03-06T03:09:29Z
+[2026-03-06 13:07:24] [--------] [info ] [main.go:425] CLIProxyAPI Version: 6.8.45, Commit: 2695a99, BuiltAt: 2026-03-06T03:09:29Z
+[2026-03-06 13:07:24] [--------] [info ] [server.go:484] management routes registered after secret key configuration
+API server started successfully on: :0
+server clients and configuration updated: 0 clients (0 auth entries + 0 Gemini API keys + 0 Claude API keys + 0 Codex keys + 0 Vertex-compat + 0 OpenAI-compat)
+[2026-03-06 13:07:24] [--------] [info ] [clients.go:112] full client load complete - 0 clients (0 auth files + 0 Gemini API keys + 0 Vertex API keys + 0 Claude API keys + 0 Codex keys + 0 OpenAI-compat)
+[2026-03-06 13:07:24] [--------] [info ] [service.go:629] file watcher started for config and auth directory changes
+[2026-03-06 13:07:24] [--------] [info ] [service.go:635] core auth auto-refresh started (interval=15m0s)
+[2026-03-06 13:07:26] [--------] [info ] [updater.go:270] management asset updated successfully (hash=74f5901d0d364d1a86384b2b36c5b53de9b654c12f71e0a3d2a3cac292da9c12)
+HOSTNAME=srv1433647
+HOME=/root
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PWD=/root/.cli-proxy-api
+CLIProxyAPI Version: 6.8.45, Commit: 2695a99, BuiltAt: 2026-03-06T03:09:29Z
+[2026-03-06 13:11:45] [--------] [info ] [main.go:425] CLIProxyAPI Version: 6.8.45, Commit: 2695a99, BuiltAt: 2026-03-06T03:09:29Z
+[2026-03-06 13:11:45] [--------] [info ] [server.go:484] management routes registered after secret key configuration
+API server started successfully on: :0
+server clients and configuration updated: 0 clients (0 auth entries + 0 Gemini API keys + 0 Claude API keys + 0 Codex keys + 0 Vertex-compat + 0 OpenAI-compat)
+[2026-03-06 13:11:45] [--------] [info ] [clients.go:112] full client load complete - 0 clients (0 auth files + 0 Gemini API keys + 0 Vertex API keys + 0 Claude API keys + 0 Codex keys + 0 OpenAI-compat)
+[2026-03-06 13:11:45] [--------] [info ] [service.go:629] file watcher started for config and auth directory changes
+[2026-03-06 13:11:45] [--------] [info ] [service.go:635] core auth auto-refresh started (interval=15m0s)
+HOSTNAME=srv1433647
+HOME=/root
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PWD=/root/.cli-proxy-api
+CLIProxyAPI Version: 6.8.45, Commit: 2695a99, BuiltAt: 2026-03-06T03:09:29Z
+[2026-03-06 13:13:02] [--------] [info ] [main.go:425] CLIProxyAPI Version: 6.8.45, Commit: 2695a99, BuiltAt: 2026-03-06T03:09:29Z
+[2026-03-06 13:13:02] [--------] [info ] [server.go:484] management routes registered after secret key configuration
+API server started successfully on: :0
+server clients and configuration updated: 0 clients (0 auth entries + 0 Gemini API keys + 0 Claude API keys + 0 Codex keys + 0 Vertex-compat + 0 OpenAI-compat)
+[2026-03-06 13:13:02] [--------] [info ] [clients.go:112] full client load complete - 0 clients (0 auth files + 0 Gemini API keys + 0 Vertex API keys + 0 Claude API keys + 0 Codex keys + 0 OpenAI-compat)
+[2026-03-06 13:13:02] [--------] [info ] [service.go:629] file watcher started for config and auth directory changes
+[2026-03-06 13:13:02] [--------] [info ] [service.go:635] core auth auto-refresh started (interval=15m0s)
+--- STDERR ---

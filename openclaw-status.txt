@@ -1,0 +1,61 @@
+OpenClaw status
+
+Overview
+┌─────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Item            │ Value                                                                                             │
+├─────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Dashboard       │ http://127.0.0.1:18789/                                                                           │
+│ OS              │ linux 5.15.0-157-generic (x64) · node 22.22.1                                                     │
+│ Tailscale       │ off                                                                                               │
+│ Channel         │ stable (default)                                                                                  │
+│ Update          │ pnpm · npm latest 2026.3.2                                                                        │
+│ Gateway         │ local · ws://127.0.0.1:18789 (local loopback) · unreachable (connect failed: connect              │
+│                 │ ECONNREFUSED 127.0.0.1:18789)                                                                     │
+│ Gateway service │ systemd not installed                                                                             │
+│ Node service    │ systemd not installed                                                                             │
+│ Agents          │ 1 · no bootstrap files · sessions 0 · default main active unknown                                 │
+│ Memory          │ 0 files · 0 chunks · dirty · sources memory · plugin memory-core · vector unknown · fts ready ·   │
+│                 │ cache on (0)                                                                                      │
+│ Probes          │ skipped (use --deep)                                                                              │
+│ Events          │ none                                                                                              │
+│ Heartbeat       │ 30m (main)                                                                                        │
+│ Sessions        │ 0 active · default claude-opus-4-6 (200k ctx) · ~/.openclaw/agents/main/sessions/sessions.json    │
+└─────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+Security audit
+Summary: 2 critical · 2 warn · 1 info
+  CRITICAL Gateway auth missing on loopback
+    gateway.bind is loopback but no gateway auth secret is configured. If the Control UI is exposed through a reverse proxy, unauthenticated access is possible.
+    Fix: Set gateway.auth (token recommended) or keep the Control UI local-only.
+  CRITICAL Browser control has no auth
+    Browser control HTTP routes are enabled but no gateway.auth token/password is configured. Any local process (or SSRF to loopback) can call browser control endp…
+    Fix: Set gateway.auth.token (recommended) or gateway.auth.password so browser control HTTP routes require authentication. Restarting the gateway will auto-generate gateway.auth.token when browser control is enabled.
+  WARN Reverse proxy headers are not trusted
+    gateway.bind is loopback and gateway.trustedProxies is empty. If you expose the Control UI through a reverse proxy, configure trusted proxies so local-client c…
+    Fix: Set gateway.trustedProxies to your proxy IPs or keep the Control UI local-only.
+  WARN State dir is readable by others
+    /root/.openclaw mode=755; consider restricting to 700.
+    Fix: chmod 700 /root/.openclaw
+Full report: openclaw security audit
+Deep probe: openclaw security audit --deep
+
+Channels
+┌──────────┬─────────┬────────┬───────────────────────────────────────────────────────────────────────────────────────┐
+│ Channel  │ Enabled │ State  │ Detail                                                                                │
+├──────────┼─────────┼────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+└──────────┴─────────┴────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+
+Sessions
+┌────────────────────────────────────────────────────────────────────┬──────┬─────────┬──────────────┬────────────────┐
+│ Key                                                                │ Kind │ Age     │ Model        │ Tokens         │
+├────────────────────────────────────────────────────────────────────┼──────┼─────────┼──────────────┼────────────────┤
+│ no sessions yet                                                    │      │         │              │                │
+└────────────────────────────────────────────────────────────────────┴──────┴─────────┴──────────────┴────────────────┘
+
+FAQ: https://docs.openclaw.ai/faq
+Troubleshooting: https://docs.openclaw.ai/troubleshooting
+
+Next steps:
+  Need to share?      openclaw status --all
+  Need to debug live? openclaw logs --follow
+  Fix reachability first: openclaw gateway probe

@@ -32,6 +32,23 @@ const verifyServer = async (
 router.use("/:serverId/*", verifyServer as any);
 router.use("/:serverId", verifyServer as any);
 
+// Check PM2 installation
+router.get("/:serverId/check", pm2Controller.checkInstalled);
+
+// Install PM2 (Stream)
+router.get(
+  "/:serverId/install/stream",
+  requireTeamRole(["admin", "editor"]),
+  pm2Controller.installPm2Stream,
+);
+
+// Uninstall PM2
+router.post(
+  "/:serverId/uninstall",
+  requireTeamRole(["admin", "editor"]),
+  pm2Controller.uninstallPm2,
+);
+
 // List all PM2 processes
 router.get("/:serverId/processes", pm2Controller.listProcesses);
 

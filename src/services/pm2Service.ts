@@ -18,6 +18,22 @@ interface PM2Process {
 }
 
 class PM2Service {
+  /**
+   * Helper to execute PM2 commands with NVM sourcing
+   */
+  private async execPm2(serverId: string, cmd: string) {
+    const bashWrapper = `
+export DEBIAN_FRONTEND=noninteractive
+if [ -f ~/.bashrc ]; then source ~/.bashrc 2>/dev/null; fi
+if [ -f ~/.profile ]; then source ~/.profile 2>/dev/null; fi
+if [ -s "$HOME/.nvm/nvm.sh" ]; then \\. "$HOME/.nvm/nvm.sh" 2>/dev/null; fi
+export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+
+${cmd}
+`;
+    return sshService.exec(serverId, bashWrapper);
+  }
+
   // Cache: serverId -> { data: PM2Process[], timestamp: number }
   private cache = new Map<string, { data: PM2Process[]; timestamp: number }>();
   private CACHE_TTL = 3 * 1000; // 3 seconds (retained for fallback)
@@ -64,7 +80,7 @@ class PM2Service {
    */
   private async refreshCache(serverId: string) {
     try {
-      const result = await sshService.exec(serverId, "pm2 jlist 2>/dev/null");
+      const result = await this.execPm2(serverId, "pm2 jlist 2>/dev/null");
       if (result.code !== 0 || !result.stdout.trim()) {
         return;
       }
@@ -92,6 +108,96 @@ class PM2Service {
     } catch (error) {
       // console.error(`Failed to refresh PM2 cache for ${serverId}:`, error);
     }
+  }
+
+  /**
+   * Check if PM2 is installed on the server
+   */
+  async checkInstalled(serverId: string): Promise<boolean> {
+    try {
+      const result = await this.execPm2(serverId, "pm2 -v");
+      return result.code === 0 && Boolean(result.stdout.trim());
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Install PM2 on the server with streaming output
+   */
+  async installStream(
+    serverId: string,
+    onData: (data: string, type: "stdout" | "stderr") => void,
+    onClose?: (code: number) => void,
+  ): Promise<void> {
+    const installScript = `
+export DEBIAN_FRONTEND=noninteractive
+
+if [ -f ~/.bashrc ]; then source ~/.bashrc 2>/dev/null; fi
+if [ -f ~/.profile ]; then source ~/.profile 2>/dev/null; fi
+if [ -s "$HOME/.nvm/nvm.sh" ]; then \\. "$HOME/.nvm/nvm.sh" 2>/dev/null; fi
+
+export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+
+echo "Checking for npm..."
+if ! command -v npm &> /dev/null; then
+    echo "npm could not be found. Please ensure Node.js is installed or NVM is set up."
+    echo ""
+    echo "Attempting to install NVM and Node.js..."
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"
+    nvm install 20
+    nvm use 20
+    nvm alias default 20
+fi
+
+echo "NPM Version: $(npm -v)"
+echo "Node Version: $(node -v)"
+echo ""
+echo "Installing PM2 globally..."
+
+npm install -g pm2 || sudo npm install -g pm2
+
+if command -v pm2 &> /dev/null; then
+    echo "PM2 installed successfully!"
+    pm2 -v
+else
+    echo "PM2 installation failed."
+    exit 1
+fi
+`;
+
+    // Write script to remote tmp file and execute it to avoid quoting hell
+    const scriptPath = `/tmp/install_pm2_${Date.now()}.sh`;
+    const execCmd = `cat << 'EOF' > ${scriptPath}
+${installScript}
+EOF
+chmod +x ${scriptPath}
+bash ${scriptPath}
+rm ${scriptPath}
+`;
+
+    return sshService.execStreamLine(serverId, execCmd, onData, onClose);
+  }
+
+  /**
+   * Uninstall PM2 from the server
+   */
+  async uninstall(
+    serverId: string,
+  ): Promise<{ success: boolean; output: string }> {
+    const uninstallScript = `
+pm2 kill || true
+npm uninstall -g pm2 || sudo npm uninstall -g pm2 || true
+rm -rf ~/.pm2 || true
+`;
+    const result = await this.execPm2(serverId, uninstallScript);
+    this.invalidateCache(serverId);
+    return {
+      success: result.code === 0,
+      output: result.stdout || result.stderr,
+    };
   }
 
   /**
@@ -150,7 +256,7 @@ class PM2Service {
       cmd = `${envPrefix} ${cmd}`;
     }
 
-    const result = await sshService.exec(serverId, cmd);
+    const result = await this.execPm2(serverId, cmd);
     this.invalidateCache(serverId);
     return {
       success: result.code === 0,
@@ -165,10 +271,7 @@ class PM2Service {
     serverId: string,
     nameOrId: string,
   ): Promise<{ success: boolean; output: string }> {
-    const result = await sshService.exec(
-      serverId,
-      `pm2 stop "${nameOrId}" 2>&1`,
-    );
+    const result = await this.execPm2(serverId, `pm2 stop "${nameOrId}" 2>&1`);
     this.invalidateCache(serverId);
     return {
       success: result.code === 0,
@@ -183,7 +286,7 @@ class PM2Service {
     serverId: string,
     nameOrId: string,
   ): Promise<{ success: boolean; output: string }> {
-    const result = await sshService.exec(
+    const result = await this.execPm2(
       serverId,
       `pm2 restart "${nameOrId}" 2>&1`,
     );
@@ -201,7 +304,7 @@ class PM2Service {
     serverId: string,
     nameOrId: string,
   ): Promise<{ success: boolean; output: string }> {
-    const result = await sshService.exec(
+    const result = await this.execPm2(
       serverId,
       `pm2 reload "${nameOrId}" 2>&1`,
     );
@@ -219,7 +322,7 @@ class PM2Service {
     serverId: string,
     nameOrId: string,
   ): Promise<{ success: boolean; output: string }> {
-    const result = await sshService.exec(
+    const result = await this.execPm2(
       serverId,
       `pm2 delete "${nameOrId}" 2>&1`,
     );
@@ -238,7 +341,7 @@ class PM2Service {
     nameOrId: string,
     lines: number = 50,
   ): Promise<{ out: string; err: string }> {
-    const result = await sshService.exec(
+    const result = await this.execPm2(
       serverId,
       `pm2 logs "${nameOrId}" --nostream --lines ${lines} --raw 2>&1`,
     );
@@ -256,7 +359,7 @@ class PM2Service {
     nameOrId?: string,
   ): Promise<{ success: boolean; output: string }> {
     const cmd = nameOrId ? `pm2 flush "${nameOrId}" 2>&1` : "pm2 flush 2>&1";
-    const result = await sshService.exec(serverId, cmd);
+    const result = await this.execPm2(serverId, cmd);
     return {
       success: result.code === 0,
       output: result.stdout || result.stderr,
@@ -267,7 +370,7 @@ class PM2Service {
    * Save current PM2 process list (pm2 save)
    */
   async save(serverId: string): Promise<{ success: boolean; output: string }> {
-    const result = await sshService.exec(serverId, "pm2 save 2>&1");
+    const result = await this.execPm2(serverId, "pm2 save 2>&1");
     this.invalidateCache(serverId);
     return {
       success: result.code === 0,
@@ -281,7 +384,7 @@ class PM2Service {
   async startup(
     serverId: string,
   ): Promise<{ success: boolean; output: string }> {
-    const result = await sshService.exec(serverId, "pm2 startup 2>&1");
+    const result = await this.execPm2(serverId, "pm2 startup 2>&1");
     this.invalidateCache(serverId);
     return {
       success: result.code === 0,
@@ -295,7 +398,7 @@ class PM2Service {
   async restartAll(
     serverId: string,
   ): Promise<{ success: boolean; output: string }> {
-    const result = await sshService.exec(serverId, "pm2 restart all 2>&1");
+    const result = await this.execPm2(serverId, "pm2 restart all 2>&1");
     this.invalidateCache(serverId);
     return {
       success: result.code === 0,
@@ -309,7 +412,7 @@ class PM2Service {
   async stopAll(
     serverId: string,
   ): Promise<{ success: boolean; output: string }> {
-    const result = await sshService.exec(serverId, "pm2 stop all 2>&1");
+    const result = await this.execPm2(serverId, "pm2 stop all 2>&1");
     this.invalidateCache(serverId);
     return {
       success: result.code === 0,
@@ -321,7 +424,7 @@ class PM2Service {
    * Get detailed info for a specific process
    */
   async describe(serverId: string, nameOrId: string): Promise<any> {
-    const result = await sshService.exec(
+    const result = await this.execPm2(
       serverId,
       `pm2 describe "${nameOrId}" 2>/dev/null | head -100`,
     );
@@ -338,7 +441,13 @@ class PM2Service {
     });
 
     // Command to start logging
-    stream.write(`pm2 logs "${nameOrId}" --lines 20 --raw\n`);
+    stream.write(`
+if [ -f ~/.bashrc ]; then source ~/.bashrc 2>/dev/null; fi
+if [ -f ~/.profile ]; then source ~/.profile 2>/dev/null; fi
+if [ -s "$HOME/.nvm/nvm.sh" ]; then \\. "$HOME/.nvm/nvm.sh" 2>/dev/null; fi
+export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+pm2 logs "${nameOrId}" --lines 20 --raw
+`);
 
     return stream;
   }

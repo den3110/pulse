@@ -6,6 +6,46 @@ import sshService from "../services/sshService";
 import User from "../models/User";
 import { logActivity } from "../services/activityLogger";
 
+// Browse directories on a remote server (for local project folder picking)
+export const browseServerFolders = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { serverId, path } = req.body;
+    if (!serverId) {
+      res.status(400).json({ message: "serverId is required" });
+      return;
+    }
+
+    // Verify server ownership
+    const Server = (await import("../models/Server")).default;
+    const server = await Server.findOne({
+      _id: serverId,
+      $or: [{ owner: req.user?._id }, { "teamMembers.user": req.user?._id }],
+    });
+    if (!server) {
+      res.status(404).json({ message: "Server not found" });
+      return;
+    }
+
+    const targetPath = path || "/";
+    // Use find -maxdepth 1 for reliable directory listing
+    const result = await sshService.exec(
+      serverId,
+      `find "${targetPath}" -maxdepth 1 -mindepth 1 -type d -printf "%f\\n" 2>/dev/null | sort`,
+    );
+    const folders = result.stdout
+      .split("\n")
+      .map((f) => f.trim())
+      .filter((f) => f && f !== "." && f !== "..");
+
+    res.json({ path: targetPath, folders });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 export const detectBranch = async (
   req: AuthRequest,
   res: Response,
@@ -147,11 +187,13 @@ export const createProject = async (
   try {
     const {
       name,
+      sourceType,
       repoUrl,
       branch,
       server,
       deployPath,
       outputPath,
+      buildOutputDir,
       buildCommand,
       installCommand,
       startCommand,
@@ -163,14 +205,21 @@ export const createProject = async (
       healthCheckUrl,
       healthCheckInterval,
       repoFolder,
-      buildOutputDir,
     } = req.body;
 
     const webhookSecret = crypto.randomBytes(32).toString("hex");
 
+    if (sourceType === "git" && !repoUrl) {
+      res
+        .status(400)
+        .json({ message: "Repository URL is required for Git projects" });
+      return;
+    }
+
     const project = await Project.create({
       name,
-      repoUrl,
+      sourceType: sourceType || "git",
+      repoUrl: repoUrl || "",
       branch: branch || "main",
       server,
       deployPath,
@@ -345,6 +394,64 @@ export const deleteOutput = async (
   }
 };
 
+export const deleteProjectLogic = async (projectId: string) => {
+  const project = await Project.findById(projectId).populate("server");
+  if (!project) throw new Error("Project not found");
+
+  const serverId = (project.server as any)?._id?.toString();
+  const errors: string[] = [];
+
+  if (serverId) {
+    // 1. Stop running process if stopCommand exists
+    if (project.stopCommand) {
+      try {
+        await sshService.exec(
+          serverId,
+          `cd ${project.deployPath} && ${project.stopCommand}`,
+        );
+      } catch {
+        // Ignore — process might not be running
+      }
+    }
+
+    // 2. Remove deploy path on remote server
+    if (
+      project.deployPath &&
+      project.deployPath.startsWith("/") &&
+      project.deployPath.length > 1
+    ) {
+      try {
+        await sshService.exec(serverId, `rm -rf "${project.deployPath}"`);
+      } catch (e: any) {
+        errors.push(`Failed to remove deploy path: ${e.message}`);
+      }
+    }
+
+    // 3. Remove output path on remote server
+    if (
+      project.outputPath &&
+      project.outputPath.startsWith("/") &&
+      project.outputPath.length > 1 &&
+      project.outputPath !== project.deployPath
+    ) {
+      try {
+        await sshService.exec(serverId, `rm -rf "${project.outputPath}"`);
+      } catch (e: any) {
+        errors.push(`Failed to remove output path: ${e.message}`);
+      }
+    }
+  }
+
+  // 4. Delete all deployment records for this project
+  const Deployment = (await import("../models/Deployment")).default;
+  await Deployment.deleteMany({ project: project._id });
+
+  // 5. Delete project from DB
+  await Project.findByIdAndDelete(project._id);
+
+  return { project, cleanupErrors: errors.length > 0 ? errors : undefined };
+};
+
 export const deleteProject = async (
   req: AuthRequest,
   res: Response,
@@ -371,70 +478,23 @@ export const deleteProject = async (
       return;
     }
 
-    const project = await Project.findOne({
+    // Ensure user owns the project before deleting
+    const projectCheck = await Project.findOne({
       _id: req.params.id,
       owner: req.user?._id,
-    }).populate("server");
-
-    if (!project) {
+    });
+    if (!projectCheck) {
       res.status(404).json({ message: "Project not found" });
       return;
     }
 
-    const serverId = (project.server as any)?._id?.toString();
-    const errors: string[] = [];
-
-    if (serverId) {
-      // 1. Stop running process if stopCommand exists
-      if (project.stopCommand) {
-        try {
-          await sshService.exec(
-            serverId,
-            `cd ${project.deployPath} && ${project.stopCommand}`,
-          );
-        } catch {
-          // Ignore — process might not be running
-        }
-      }
-
-      // 2. Remove deploy path on remote server
-      if (
-        project.deployPath &&
-        project.deployPath.startsWith("/") &&
-        project.deployPath.length > 1
-      ) {
-        try {
-          await sshService.exec(serverId, `rm -rf "${project.deployPath}"`);
-        } catch (e: any) {
-          errors.push(`Failed to remove deploy path: ${e.message}`);
-        }
-      }
-
-      // 3. Remove output path on remote server (if set and different from deploy path)
-      if (
-        project.outputPath &&
-        project.outputPath.startsWith("/") &&
-        project.outputPath.length > 1 &&
-        project.outputPath !== project.deployPath
-      ) {
-        try {
-          await sshService.exec(serverId, `rm -rf "${project.outputPath}"`);
-        } catch (e: any) {
-          errors.push(`Failed to remove output path: ${e.message}`);
-        }
-      }
-    }
-
-    // 4. Delete all deployment records for this project
-    const Deployment = (await import("../models/Deployment")).default;
-    await Deployment.deleteMany({ project: project._id });
-
-    // 5. Delete project from DB
-    await Project.findByIdAndDelete(project._id);
+    const { project, cleanupErrors } = await deleteProjectLogic(
+      projectCheck._id.toString(),
+    );
 
     res.json({
       message: "Project deleted successfully",
-      cleanupErrors: errors.length > 0 ? errors : undefined,
+      cleanupErrors: cleanupErrors?.length ? cleanupErrors : undefined,
     });
     logActivity({
       action: "project.delete",

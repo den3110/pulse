@@ -30,6 +30,7 @@ const activityLogSchema = new Schema<IActivityLog>(
         "project.delete",
         "project.health",
         "nginx.update",
+        "nginx.generate",
         "ssl.provision",
         "settings.update",
         "database.install",

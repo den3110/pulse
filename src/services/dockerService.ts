@@ -12,6 +12,7 @@ export interface DockerContainer {
   size: string;
   networks: string;
   command: string;
+  composeProject: string;
 }
 
 export interface DockerImage {
@@ -38,8 +39,21 @@ class DockerService {
    * List all containers (running + stopped)
    */
   async listContainers(serverId: string): Promise<DockerContainer[]> {
-    const format =
-      '{"id":"{{.ID}}","name":"{{.Names}}","image":"{{.Image}}","status":"{{.Status}}","state":"{{.State}}","ports":"{{.Ports}}","created":"{{.CreatedAt}}","size":"{{.Size}}","networks":"{{.Networks}}","command":"{{.Command}}"}';
+    const sep = "|||";
+    const fields = [
+      "{{.ID}}",
+      "{{.Names}}",
+      "{{.Image}}",
+      "{{.Status}}",
+      "{{.State}}",
+      "{{.Ports}}",
+      "{{.CreatedAt}}",
+      "{{.Size}}",
+      "{{.Networks}}",
+      '{{.Label "com.docker.compose.project"}}',
+      "{{.Command}}",
+    ];
+    const format = fields.join(sep);
     const { stdout, stderr, code } = await sshService.exec(
       serverId,
       `docker ps -a --format '${format}' --no-trunc 2>/dev/null`,
@@ -56,11 +70,21 @@ class DockerService {
       .split("\n")
       .filter((line) => line.trim())
       .map((line) => {
-        try {
-          return JSON.parse(line);
-        } catch {
-          return null;
-        }
+        const parts = line.split(sep);
+        if (parts.length < 11) return null;
+        return {
+          id: parts[0],
+          name: parts[1],
+          image: parts[2],
+          status: parts[3],
+          state: parts[4],
+          ports: parts[5],
+          created: parts[6],
+          size: parts[7],
+          networks: parts[8],
+          composeProject: parts[9] || "",
+          command: parts.slice(10).join(sep),
+        } as DockerContainer;
       })
       .filter(Boolean) as DockerContainer[];
   }
@@ -69,8 +93,15 @@ class DockerService {
    * List all images
    */
   async listImages(serverId: string): Promise<DockerImage[]> {
-    const format =
-      '{"id":"{{.ID}}","repository":"{{.Repository}}","tag":"{{.Tag}}","size":"{{.Size}}","created":"{{.CreatedAt}}"}';
+    const sep = "|||";
+    const fields = [
+      "{{.ID}}",
+      "{{.Repository}}",
+      "{{.Tag}}",
+      "{{.Size}}",
+      "{{.CreatedAt}}",
+    ];
+    const format = fields.join(sep);
     const { stdout } = await sshService.exec(
       serverId,
       `docker images --format '${format}' 2>/dev/null`,
@@ -83,11 +114,15 @@ class DockerService {
       .split("\n")
       .filter((line) => line.trim())
       .map((line) => {
-        try {
-          return JSON.parse(line);
-        } catch {
-          return null;
-        }
+        const parts = line.split(sep);
+        if (parts.length < 5) return null;
+        return {
+          id: parts[0],
+          repository: parts[1],
+          tag: parts[2],
+          size: parts[3],
+          created: parts[4],
+        } as DockerImage;
       })
       .filter(Boolean) as DockerImage[];
   }
@@ -316,6 +351,50 @@ class DockerService {
     }
 
     return stdout.trim();
+  }
+
+  /**
+   * Run docker compose up in a directory (streamed output)
+   */
+  async dockerComposeUp(
+    serverId: string,
+    composePath: string,
+    onLine: (line: string) => void,
+    projectName?: string,
+  ): Promise<{ containers: string[] }> {
+    const pFlag = projectName ? `-p ${projectName} ` : "";
+    onLine(`Running docker compose ${pFlag}up in ${composePath}...`);
+
+    // Run docker compose up -d --build
+    const { stdout, stderr, code } = await sshService.exec(
+      serverId,
+      `cd ${composePath} && docker compose ${pFlag}up -d --build 2>&1`,
+      300000, // 5 min timeout for builds
+    );
+
+    // Stream output lines
+    const output = stdout || stderr || "";
+    for (const line of output.split("\n").filter((l) => l.trim())) {
+      onLine(line);
+    }
+
+    if (code !== 0) {
+      throw new Error(`docker compose up failed with exit code ${code}`);
+    }
+
+    // Get container names from the compose project
+    const psResult = await sshService.exec(
+      serverId,
+      `cd ${composePath} && docker compose ${pFlag}ps --format '{{.Name}}' 2>/dev/null`,
+      10000,
+    );
+
+    const containers = psResult.stdout
+      .trim()
+      .split("\n")
+      .filter((l) => l.trim());
+
+    return { containers };
   }
 }
 

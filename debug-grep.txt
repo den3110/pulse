@@ -1,0 +1,3 @@
+/tmp/clip/sdk/cliproxy/service.go:723:				return fmt.Errorf("cliproxy: failed to create auth directory %s: %w", s.cfg.AuthDir, mkErr)
+
+Cloning into '/tmp/clip'...

@@ -271,7 +271,11 @@ class SFTPService {
     return new Promise<void>((resolve, reject) => {
       const stream = sftp.createWriteStream(filePath);
       stream.on("close", () => resolve());
-      stream.on("error", reject);
+      stream.on("error", (err: any) => {
+        reject(
+          new Error(err.message || `Failed to upload file to ${filePath}`),
+        );
+      });
       stream.end(buffer);
     });
   }
@@ -345,14 +349,47 @@ class SFTPService {
   }
 
   /**
+   * Create multiple directories at once using a single SSH mkdir -p command
+   */
+  async createDirectoriesBatch(
+    serverId: string,
+    paths: string[],
+  ): Promise<void> {
+    if (paths.length === 0) return;
+    const args = paths.map((p) => `'${p.replace(/'/g, "'\\''")}'`).join(" ");
+    await sshService.exec(serverId, `mkdir -p ${args}`);
+  }
+
+  /**
    * Rename / move a file or directory
    */
   async rename(
     serverId: string,
     oldPath: string,
     newPath: string,
+    overwrite: boolean = false,
   ): Promise<void> {
     const { sftp } = await this.getSFTP(serverId);
+
+    if (!overwrite) {
+      const exists = await new Promise<boolean>((resolve) => {
+        sftp.stat(newPath, (err) => {
+          if (err) resolve(false);
+          else resolve(true);
+        });
+      });
+      if (exists) {
+        const error: any = new Error("File or folder already exists");
+        error.code = "TARGET_EXISTS";
+        throw error;
+      }
+    } else {
+      // If overwrite is true, we delete the target first to ensure sftp.rename succeeds
+      await sshService.exec(
+        serverId,
+        `rm -rf '${newPath.replace(/'/g, "'\\''")}'`,
+      );
+    }
 
     return new Promise<void>((resolve, reject) => {
       sftp.rename(oldPath, newPath, (err) => {
@@ -451,11 +488,38 @@ class SFTPService {
     const arc = archivePath.replace(/'/g, "'\\''");
     const dst = destPath.replace(/'/g, "'\\''");
 
+    // Ensure destination directory exists
+    await sshService.exec(serverId, `mkdir -p '${dst}'`);
+
     if (archivePath.endsWith(".zip")) {
-      await sshService.exec(serverId, `unzip -o '${arc}' -d '${dst}'`);
+      // Try unzip first, fall back to python3 if not available
+      const result = await sshService.exec(
+        serverId,
+        `unzip -o '${arc}' -d '${dst}' 2>&1`,
+      );
+      if (result.code !== 0) {
+        // unzip failed — try python3 fallback
+        const pyResult = await sshService.exec(
+          serverId,
+          `python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" '${arc}' '${dst}' 2>&1`,
+        );
+        if (pyResult.code !== 0) {
+          throw new Error(
+            `Failed to extract archive: ${result.stdout || result.stderr || pyResult.stdout || pyResult.stderr}`,
+          );
+        }
+      }
     } else {
       // tar.gz, .tgz, .tar.bz2 etc.
-      await sshService.exec(serverId, `tar -xf '${arc}' -C '${dst}'`);
+      const result = await sshService.exec(
+        serverId,
+        `tar -xf '${arc}' -C '${dst}' 2>&1`,
+      );
+      if (result.code !== 0) {
+        throw new Error(
+          `Failed to extract archive: ${result.stdout || result.stderr}`,
+        );
+      }
     }
   }
 

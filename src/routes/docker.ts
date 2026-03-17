@@ -89,6 +89,13 @@ router.post(
   dockerController.pullImage,
 );
 
+// Docker Compose Up (SSE stream)
+router.post(
+  "/:serverId/compose-up",
+  requireTeamRole(["admin", "editor"]),
+  dockerController.dockerComposeUp,
+);
+
 // Remove image
 router.delete(
   "/:serverId/images/:imageId",

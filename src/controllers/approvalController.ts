@@ -109,6 +109,43 @@ export const reviewApproval = async (req: AuthRequest, res: Response) => {
     approval.reviewedBy = req.user?._id;
     approval.reviewedAt = new Date();
     approval.reviewComment = comment || "";
+
+    // Execute the action if approved
+    if (approval.status === "approved") {
+      try {
+        if (approval.type === "deploy") {
+          const deployService = (await import("../services/deployService"))
+            .default;
+          // Trigger deploy, passing reviewer UserID as trigger
+          await deployService.deploy(
+            approval.project.toString(),
+            "manual",
+            req.user?._id.toString(),
+          );
+        } else if (
+          approval.type === "rollback" &&
+          approval.metadata?.commitHash
+        ) {
+          const deployService = (await import("../services/deployService"))
+            .default;
+          await deployService.rollback(
+            approval.project.toString(),
+            approval.metadata.commitHash,
+            req.user?._id.toString(),
+          );
+        } else if (approval.type === "delete") {
+          const { deleteProjectLogic } = await import("./projectController");
+          await deleteProjectLogic(approval.project.toString());
+        }
+      } catch (execError: any) {
+        console.error("Approval execution failed:", execError);
+        // Append warning to comment so the reviewer knows execution failed
+        approval.reviewComment =
+          (approval.reviewComment ? approval.reviewComment + "\n\n" : "") +
+          `⚠️ System Note: The action was approved, but execution failed: ${execError.message}`;
+      }
+    }
+
     await approval.save();
 
     const populated = await approval.populate([

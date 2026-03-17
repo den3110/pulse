@@ -24,6 +24,8 @@ export interface IUser extends Document {
     slackWebhookUrl?: string;
     discordWebhookUrl?: string;
   };
+  isBanned: boolean;
+  lastLoginAt?: Date;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -110,6 +112,11 @@ const userSchema = new Schema<IUser>(
       slackWebhookUrl: { type: String, trim: true },
       discordWebhookUrl: { type: String, trim: true },
     },
+    isBanned: {
+      type: Boolean,
+      default: false,
+    },
+    lastLoginAt: Date,
   },
   {
     timestamps: true,

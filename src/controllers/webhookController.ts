@@ -30,6 +30,16 @@ export const handleWebhook = async (
       return;
     }
 
+    if (project.status === "stopped") {
+      console.log(
+        `[Webhook] Project ${req.params.projectId} is stopped, skipping auto deploy`,
+      );
+      res
+        .status(200)
+        .json({ message: "Project is stopped, skipping auto deploy" });
+      return;
+    }
+
     // Handle GitHub ping event
     const event = req.headers["x-github-event"];
     if (event === "ping") {

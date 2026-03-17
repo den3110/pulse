@@ -1,0 +1,22 @@
+total 28
+drwxr-xr-x  4 root root 4096 Mar  6 12:32 .
+drwx------ 12 root root 4096 Mar  6 12:26 ..
+drwxr-xr-x  3 root root 4096 Mar  6 12:49 .cli-proxy-api
+-rw-r--r--  1 root root 1014 Mar  6 12:52 Dockerfile
+-rw-r--r--  1 root root  280 Mar  6 12:52 config.yaml
+drwxr-xr-x  2 root root 4096 Mar  6 12:26 data
+-rw-r--r--  1 root root  334 Mar  6 12:52 docker-compose.yml
+# CLIProxyAPI Configuration — auto-generated
+# Providers: gemini | Port: 8317
+
+server:
+  port: 8317
+  host: "0.0.0.0"
+remote-management:
+  secret-key: "$2a$10$OXCbtSa8RHt.1Wpa4D3VIeaOenZyzef5nC7lvbTp/4GSS70t3tjuK"
+providers:
+  gemini:
+    enabled: true
+logging:
+  level: "info"
+

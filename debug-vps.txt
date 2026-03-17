@@ -1,0 +1,47 @@
+--- CURRENT CONFIG.YAML ---
+# CLIProxyAPI Configuration — auto-generated
+# Providers: gemini | Port: 8317
+
+server:
+  port: 8317
+  host: "0.0.0.0"
+
+remote-management:
+  secret-key: "localadmin123"
+
+providers:
+  gemini:
+    enabled: true
+
+logging:
+  level: "info"
+
+--- JOURNALCTL ---
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:   -kimi-login
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:     Login to Kimi using OAuth
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:   -login
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:     Login Google Account
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:   -no-browser
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:     Don't open browser automatically for OAuth
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:   -oauth-callback-port int
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:     Override OAuth callback port (defaults to provider-specific port)
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:   -project_id string
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:     Project ID (Gemini only, not required)
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:   -qwen-login
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:     Login to Qwen using OAuth
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:   -standalone
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:     In TUI mode, start an embedded local server
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:   -tui
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:     Start with terminal management UI
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:   -vertex-import string
+Mar 06 11:59:37 srv1433647 cli-proxy-api[1612006]:     Import Vertex service account key JSON file
+Mar 06 11:59:37 srv1433647 systemd[1]: cliproxyapi.service: Main process exited, code=exited, status=2/INVALIDARGUMENT
+Mar 06 11:59:37 srv1433647 systemd[1]: cliproxyapi.service: Failed with result 'exit-code'.
+
+--- SYSTEMCTL STATUS ---
+● cliproxyapi.service - CLIProxyAPI Service
+     Loaded: loaded (/etc/systemd/system/cliproxyapi.service; enabled; preset: enabled)
+     Active: activating (auto-restart) (Result: exit-code) since Fri 2026-03-06 11:59:37 UTC; 2s ago
+    Process: 1612006 ExecStart=/usr/local/bin/cli-proxy-api -c /root/.cli-proxy-api/config.yaml (code=exited, status=2)
+   Main PID: 1612006 (code=exited, status=2)
+        CPU: 9ms

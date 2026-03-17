@@ -85,7 +85,44 @@ export const uploadFile = async (
     );
     res.json({ message: "File uploaded", path: targetPath });
   } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      message: error.message || "Upload failed: unknown server error",
+    });
+  }
+};
+
+export const uploadArchive = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const targetDir = req.body.path || "/tmp";
+    const file = (req as any).file;
+    if (!file) {
+      res.status(400).json({ message: "No archive uploaded" });
+      return;
+    }
+    const serverId = req.params.serverId as string;
+    const tempZip = `/tmp/_upload_${Date.now()}.zip`;
+
+    // 1. Upload zip to temp location
+    await sftpService.uploadFile(serverId, tempZip, file.buffer);
+
+    // 2. Extract to target directory
+    try {
+      await sftpService.unzipArchive(serverId, tempZip, targetDir);
+    } finally {
+      // 3. Always cleanup temp zip
+      try {
+        await sftpService.deleteFile(serverId, tempZip);
+      } catch {}
+    }
+
+    res.json({ message: "Archive uploaded and extracted", path: targetDir });
+  } catch (error: any) {
+    res.status(500).json({
+      message: error.message || "Upload failed: unknown server error",
+    });
   }
 };
 
@@ -164,20 +201,49 @@ export const createDirectory = async (
   }
 };
 
+export const batchMkdir = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { paths } = req.body;
+    if (!Array.isArray(paths) || paths.length === 0) {
+      res.status(400).json({ message: "Paths array is required" });
+      return;
+    }
+    await sftpService.createDirectoriesBatch(
+      req.params.serverId as string,
+      paths,
+    );
+    res.json({ message: "Directories created" });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 export const renameItem = async (
   req: AuthRequest,
   res: Response,
 ): Promise<void> => {
   try {
-    const { oldPath, newPath } = req.body;
+    const { oldPath, newPath, overwrite } = req.body;
     if (!oldPath || !newPath) {
       res.status(400).json({ message: "oldPath and newPath are required" });
       return;
     }
-    await sftpService.rename(req.params.serverId as string, oldPath, newPath);
+    await sftpService.rename(
+      req.params.serverId as string,
+      oldPath,
+      newPath,
+      overwrite,
+    );
     res.json({ message: "Renamed" });
   } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    if (error.code === "TARGET_EXISTS") {
+      res.status(409).json({ message: error.message, code: "TARGET_EXISTS" });
+    } else {
+      res.status(500).json({ message: error.message });
+    }
   }
 };
 

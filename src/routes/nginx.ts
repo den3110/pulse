@@ -63,10 +63,24 @@ router.post(
   nginxController.disableConfig,
 );
 
+// Form Builder Config Generator
+router.post(
+  "/:serverId/generate-config",
+  requireTeamRole(["admin"]),
+  nginxController.generateAndSaveConfig,
+);
+
 // Nginx operations
 router.post("/:serverId/test", nginxController.testConfig);
+router.post("/:serverId/test/:name", nginxController.testConfigFile);
 router.post("/:serverId/reload", nginxController.reloadNginx);
 router.get("/:serverId/status", nginxController.getNginxStatus);
+router.get("/:serverId/check-installed", nginxController.checkNginxInstalled);
+router.post(
+  "/:serverId/install",
+  requireTeamRole(["admin"]),
+  nginxController.installNginx,
+);
 
 // Logs
 router.get("/:serverId/logs/:type", nginxController.getLogs);

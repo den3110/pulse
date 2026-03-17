@@ -2,8 +2,9 @@ import mongoose, { Document, Schema } from "mongoose";
 
 export interface IProject extends Document {
   name: string;
-  repoUrl: string;
-  branch: string;
+  sourceType: "git" | "local";
+  repoUrl?: string;
+  branch?: string;
   repoFolder?: string;
   server: mongoose.Types.ObjectId;
   deployPath: string;
@@ -28,6 +29,7 @@ export interface IProject extends Document {
   order: number;
   processManager: "nohup" | "pm2";
   lastDeployedAt?: Date;
+  lastFolderTimestamp?: string;
   healthCheck: {
     enabled: boolean;
     url: string;
@@ -50,15 +52,19 @@ const projectSchema = new Schema<IProject>(
       required: [true, "Project name is required"],
       trim: true,
     },
+    sourceType: {
+      type: String,
+      enum: ["git", "local"],
+      default: "git",
+    },
     repoUrl: {
       type: String,
-      required: [true, "Repository URL is required"],
       trim: true,
     },
     branch: {
       type: String,
-      default: "main",
       trim: true,
+      default: "main",
     },
     repoFolder: {
       type: String,
@@ -145,6 +151,10 @@ const projectSchema = new Schema<IProject>(
       default: "nohup",
     },
     lastDeployedAt: Date,
+    lastFolderTimestamp: {
+      type: String,
+      default: "",
+    },
     healthCheck: {
       enabled: { type: Boolean, default: false },
       url: { type: String, default: "", trim: true },

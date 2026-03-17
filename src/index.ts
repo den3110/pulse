@@ -43,6 +43,9 @@ import testRunnerRoutes from "./routes/testRunner";
 import pipelineRoutes from "./routes/pipelines";
 import vpnRoutes from "./routes/vpn";
 import logRoutes from "./routes/logs";
+import setupRoutes from "./routes/setup";
+import smartDeployRoutes from "./routes/smartDeploy";
+import oneClickRoutes from "./routes/oneClick";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -127,6 +130,9 @@ app.use("/api/test-runner", testRunnerRoutes);
 app.use("/api/pipelines", pipelineRoutes);
 app.use("/api/vpn", vpnRoutes);
 app.use("/api/logs", logRoutes);
+app.use("/api/servers", setupRoutes);
+app.use("/api/smart-deploy", smartDeployRoutes);
+app.use("/api/servers", oneClickRoutes);
 
 // Health check
 app.get("/api/health", (_req, res) => {

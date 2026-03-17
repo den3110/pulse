@@ -7,6 +7,9 @@ import { sendSSE } from "./sseService";
 
 let io: IOServer;
 const terminalStreams = new Map<string, any>();
+// Track pending (in-flight) terminal:start requests to prevent race conditions
+// where multiple createShell calls overlap for the same termId
+const pendingTerminalStarts = new Map<string, Set<number>>();
 
 export const initSocket = (server: any): IOServer => {
   io = new IOServer(server, {
@@ -81,13 +84,14 @@ export const initSocket = (server: any): IOServer => {
     socket.on("disconnect", () => {
       console.log(`[Socket] Client disconnected: ${socket.id}`);
       // Clean up any active terminal sessions for this socket
-      // Clean up any active terminal sessions for this socket
       if (terminalStreams.has(socket.id)) {
         const clientStreams = terminalStreams.get(socket.id);
         clientStreams.forEach((stream: any) => stream.end());
         clientStreams.clear();
         terminalStreams.delete(socket.id);
       }
+      // Clean up pending starts tracking
+      pendingTerminalStarts.delete(socket.id);
     });
 
     // --- Terminal Events ---
@@ -100,7 +104,7 @@ export const initSocket = (server: any): IOServer => {
         }
         const clientStreams = terminalStreams.get(socket.id);
 
-        // Clean up existing session for this specific prompt IF it exists
+        // Clean up existing session for this specific termId IF it exists
         // (This handles refreshing the tab or re-mounting same termId)
         if (clientStreams.has(termId)) {
           const stream = clientStreams.get(termId);
@@ -111,7 +115,35 @@ export const initSocket = (server: any): IOServer => {
           clientStreams.delete(termId);
         }
 
+        // Track this as a pending start to handle race conditions
+        // (e.g. React StrictMode double-mount or rapid close/reopen)
+        if (!pendingTerminalStarts.has(socket.id)) {
+          pendingTerminalStarts.set(socket.id, new Set());
+        }
+        const pendingSet = pendingTerminalStarts.get(socket.id)!;
+        // If there's already a pending start for this termId, it means
+        // a previous createShell is still in flight. Mark it so the
+        // old one gets cleaned up when it resolves.
+        pendingSet.add(termId);
+        // Use a unique token to detect if THIS specific start is still the latest
+        const startToken = Date.now() + Math.random();
+        (clientStreams as any)[`__pending_${termId}`] = startToken;
+
         const stream = await sshService.createShell(serverId, { rows, cols });
+
+        // After await: check if this start is still the latest for this termId.
+        // If another terminal:start or terminal:close arrived while we were awaiting,
+        // the token will have changed, and we should discard this shell.
+        if ((clientStreams as any)[`__pending_${termId}`] !== startToken) {
+          // Another start/close superseded us — kill this orphaned shell
+          stream.removeAllListeners();
+          stream.end();
+          return;
+        }
+        // Clean up pending tracking
+        delete (clientStreams as any)[`__pending_${termId}`];
+        pendingSet.delete(termId);
+
         clientStreams.set(termId, stream);
 
         // Notify client that terminal is ready for input

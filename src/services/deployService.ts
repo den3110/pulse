@@ -13,6 +13,9 @@ import {
 import logger from "../utils/logger";
 import { sendDeploymentAlert } from "./alertService";
 
+const NVM_WRAPPER =
+  'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"; ';
+
 class DeployService {
   private activeDeploys: Set<string> = new Set();
   private cancelledDeploys: Set<string> = new Set(); // Track cancelled deploys
@@ -62,9 +65,12 @@ class DeployService {
       throw new Error("Project not found");
     }
 
-    // Resolve authenticated repo URL for private GitHub repos
+    // Resolve authenticated repo URL for private GitHub repos (skip for local projects)
     let resolvedRepoUrl = project.repoUrl;
-    if (project.repoUrl.includes("github.com")) {
+    if (
+      project.sourceType !== "local" &&
+      project.repoUrl?.includes("github.com")
+    ) {
       // For manual deploys: use the triggering user's token.
       // For webhooks/schedule: fall back to the project owner's token.
       const tokenUserId = userId || project.owner?.toString();
@@ -123,6 +129,11 @@ class DeployService {
     const repoUrl = resolvedRepoUrl || project.repoUrl;
     const branch = project.branch;
     const pid = project._id.toString();
+    logger.info(
+      `[Deploy] Project ${pid} sourceType=${project.sourceType}, deployPath=${deployPath}`,
+    );
+    // Determine if this is a local project (no git clone needed)
+    const isLocal = project.sourceType === "local" || !project.repoUrl;
     // workDir: if repoFolder is set, commands run inside that subfolder
     const workDir = project.repoFolder
       ? `${deployPath}/${project.repoFolder}`
@@ -151,86 +162,113 @@ class DeployService {
         );
       }
 
-      // Step 1: Clone or Pull (auto-creates directories, handles broken state)
-      await this.updateStatus(deploymentId, "cloning", pid);
-      emitDeployLog(
-        deploymentId,
-        `📡 Checking repository at ${deployPath}...`,
-        "info",
-        pid,
-      );
-
-      // Single robust command: create parent dir, check .git, pull or clone
-      const cloneOrPull = `mkdir -p "$(dirname "${deployPath}")" && if [ -d "${deployPath}/.git" ]; then echo "REPO_EXISTS"; else echo "REPO_NEW" && rm -rf "${deployPath}"; fi`;
-
-      const dirCheck = await sshService.exec(serverId, cloneOrPull);
-
-      if (dirCheck.stdout.includes("REPO_EXISTS")) {
+      // Step 1: Clone or Pull — skip for local projects
+      if (isLocal) {
+        // Local project: just verify the deploy path exists
         emitDeployLog(
           deploymentId,
-          `📥 Repository found! Pulling latest changes from branch ${branch}...`,
+          `📁 Verifying local path: ${deployPath}...`,
           "info",
           pid,
         );
-        await this.execWithLogs(
+        const pathCheck = await sshService.exec(
           serverId,
+          `test -e "${deployPath}" && echo "PATH_EXISTS" || echo "PATH_NOT_FOUND"`,
+        );
+        logger.info(
+          `[Deploy] Path check result — stdout: "${pathCheck.stdout}", stderr: "${pathCheck.stderr}", code: ${pathCheck.code}`,
+        );
+        if (!pathCheck.stdout.includes("PATH_EXISTS")) {
+          throw new Error(`Local path not found: ${deployPath}`);
+        }
+        emitDeployLog(
           deploymentId,
-          `cd ${deployPath} && git stash && git fetch origin && git checkout ${branch} && git pull origin ${branch}`,
+          `✅ Local path verified: ${deployPath}`,
+          "success",
           pid,
         );
       } else {
+        // Git project: clone or pull
+        await this.updateStatus(deploymentId, "cloning", pid);
         emitDeployLog(
           deploymentId,
-          `📥 Cloning repository to ${deployPath}...`,
+          `📡 Checking repository at ${deployPath}...`,
           "info",
           pid,
         );
-        await this.execWithLogs(
+
+        // Single robust command: create parent dir, check .git, pull or clone
+        const cloneOrPull = `mkdir -p "$(dirname "${deployPath}")" && if [ -d "${deployPath}/.git" ]; then echo "REPO_EXISTS"; else echo "REPO_NEW" && rm -rf "${deployPath}"; fi`;
+
+        const dirCheck = await sshService.exec(serverId, cloneOrPull);
+
+        if (dirCheck.stdout.includes("REPO_EXISTS")) {
+          emitDeployLog(
+            deploymentId,
+            `📥 Repository found! Pulling latest changes from branch ${branch}...`,
+            "info",
+            pid,
+          );
+          await this.execWithLogs(
+            serverId,
+            deploymentId,
+            `cd ${deployPath} && git stash && git fetch origin && git checkout ${branch} && git pull origin ${branch}`,
+            pid,
+          );
+        } else {
+          emitDeployLog(
+            deploymentId,
+            `📥 Cloning repository to ${deployPath}...`,
+            "info",
+            pid,
+          );
+          await this.execWithLogs(
+            serverId,
+            deploymentId,
+            `rm -rf "${deployPath}" && git clone -b ${branch} ${repoUrl} ${deployPath}`,
+            pid,
+          );
+        }
+
+        // Get commit hash + message
+        const commitResult = await sshService.exec(
           serverId,
+          `cd ${deployPath} && git rev-parse --short HEAD`,
+        );
+        const commitMsg = await sshService.exec(
+          serverId,
+          `cd ${deployPath} && git log -1 --format='%s (%an)'`,
+        );
+        const hash = commitResult.stdout.trim();
+        const message = commitMsg.stdout.trim();
+
+        // Extract author if possible (format was '%s (%an)')
+        const authorMatch = message.match(/\(([^)]+)\)$/);
+        const author = authorMatch ? authorMatch[1] : "Unknown";
+        const cleanMessage = message.replace(/\s\([^)]+\)$/, "");
+
+        await Deployment.findByIdAndUpdate(deploymentId, {
+          commitHash: hash,
+          commitMessage: cleanMessage,
+          commitAuthor: author,
+          commitUrl:
+            project.githubRepoOwner && project.githubRepoName
+              ? `https://github.com/${project.githubRepoOwner}/${project.githubRepoName}/commit/${hash}`
+              : "",
+        });
+
+        // Update GitHub Status - Pending
+        if (project.githubRepoId) {
+          await this.updateGitHubStatus(project, hash, "pending", deploymentId);
+        }
+
+        emitDeployLog(
           deploymentId,
-          `rm -rf "${deployPath}" && git clone -b ${branch} ${repoUrl} ${deployPath}`,
+          `✅ Code ready at commit: ${hash} — ${message}`,
+          "success",
           pid,
         );
       }
-
-      // Get commit hash + message
-      const commitResult = await sshService.exec(
-        serverId,
-        `cd ${deployPath} && git rev-parse --short HEAD`,
-      );
-      const commitMsg = await sshService.exec(
-        serverId,
-        `cd ${deployPath} && git log -1 --format='%s (%an)'`,
-      );
-      const hash = commitResult.stdout.trim();
-      const message = commitMsg.stdout.trim();
-
-      // Extract author if possible (format was '%s (%an)')
-      const authorMatch = message.match(/\(([^)]+)\)$/);
-      const author = authorMatch ? authorMatch[1] : "Unknown";
-      const cleanMessage = message.replace(/\s\([^)]+\)$/, "");
-
-      await Deployment.findByIdAndUpdate(deploymentId, {
-        commitHash: hash,
-        commitMessage: cleanMessage,
-        commitAuthor: author,
-        commitUrl:
-          project.githubRepoOwner && project.githubRepoName
-            ? `https://github.com/${project.githubRepoOwner}/${project.githubRepoName}/commit/${hash}`
-            : "",
-      });
-
-      // Update GitHub Status - Pending
-      if (project.githubRepoId) {
-        await this.updateGitHubStatus(project, hash, "pending", deploymentId);
-      }
-
-      emitDeployLog(
-        deploymentId,
-        `✅ Code ready at commit: ${hash} — ${message}`,
-        "success",
-        pid,
-      );
 
       // Step 2: Set environment variables
       const envMap: Record<string, string> =
@@ -413,22 +451,28 @@ class DeployService {
 
           // 1. Delete existing process if any
           try {
-            await sshService.exec(serverId, `pm2 delete "${pm2Name}"`);
+            await sshService.exec(
+              serverId,
+              `${NVM_WRAPPER}pm2 delete "${pm2Name}"`,
+            );
           } catch {}
 
           // 2. Start new process
-          // pm2 start "npm start" --name "my-project" --cwd "/path/to/repo"
+          // pm2 start "yarn start" --name "my-project" --cwd "/path/to/repo"
           await sshService.exec(
             serverId,
-            `pm2 start "${project.startCommand}" --name "${pm2Name}" --cwd "${workDir}"`,
+            `${NVM_WRAPPER}pm2 start "${project.startCommand}" --name "${pm2Name}" --cwd "${workDir}"`,
           );
 
           // 3. Save PM2 list
-          await sshService.exec(serverId, "pm2 save");
+          await sshService.exec(serverId, `${NVM_WRAPPER}pm2 save`);
 
           // 4. Verify PM2 process
           try {
-            await sshService.exec(serverId, `pm2 show "${pm2Name}"`);
+            await sshService.exec(
+              serverId,
+              `${NVM_WRAPPER}pm2 show "${pm2Name}"`,
+            );
           } catch (e) {
             throw new Error("Service failed to start (PM2 process not found)");
           }
@@ -446,7 +490,7 @@ class DeployService {
           // Use < /dev/null and ( ... ) & to ensure efficient detachment
           await sshService.exec(
             serverId,
-            `cd ${workDir} && (nohup ${project.startCommand} > ${logFile} 2>&1 < /dev/null & echo $! > "${workDir}/.deploy.pid")`,
+            `cd ${workDir} && (${NVM_WRAPPER}nohup ${project.startCommand} > ${logFile} 2>&1 < /dev/null & echo $! > "${workDir}/.deploy.pid")`,
           );
 
           // Stream logs for 10 seconds to show startup progress
@@ -543,12 +587,20 @@ class DeployService {
       }
 
       // Update GitHub Status - Success
-      // We need hash here.
-      // But hash was local variable.
-      // We can fetch it from deployment or use a wider scope variable.
-      // Since hash is available in this scope (it's inside try), we use it.
-      if (project.githubRepoId && typeof hash !== "undefined") {
-        await this.updateGitHubStatus(project, hash, "success", deploymentId);
+      if (project.githubRepoId) {
+        try {
+          const deployment = await Deployment.findById(deploymentId);
+          if (deployment?.commitHash) {
+            await this.updateGitHubStatus(
+              project,
+              deployment.commitHash,
+              "success",
+              deploymentId,
+            );
+          }
+        } catch (e) {
+          /* ignore */
+        }
       }
 
       // Create in-app notification for all users
@@ -698,15 +750,14 @@ class DeployService {
 
     let exitCode = 0;
 
-    // Get deploy path from project to write running PID
     const project = projectId ? await Project.findById(projectId) : null;
     const deployPath = project?.deployPath;
 
     // Wrap command to write its PID so we can kill it
     // Only write PID if deploy directory already exists (skip on first clone)
     const wrappedCommand = deployPath
-      ? `bash -c 'if [ -d "${deployPath}" ]; then echo $$ > "${deployPath}/.deploy.running.pid"; fi && ${command.replace(/'/g, "'\\''")}'`
-      : command;
+      ? `bash -c '${NVM_WRAPPER}if [ -d "${deployPath}" ]; then echo $$ > "${deployPath}/.deploy.running.pid"; fi && ${command.replace(/'/g, "'\\''")}'`
+      : `${NVM_WRAPPER}${command}`;
 
     await sshService.execStreamLine(
       serverId,
@@ -813,18 +864,23 @@ class DeployService {
       : project.deployPath;
 
     try {
+      const NVM_WRAPPER =
+        'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"; ';
       // Run user's stop command if configured
       if (project.stopCommand) {
         await sshService.exec(
           serverId,
-          `cd ${workDir} && ${project.stopCommand}`,
+          `cd ${workDir} && ${NVM_WRAPPER}${project.stopCommand}`,
         );
       }
 
       if (project.processManager === "pm2") {
         // PM2 Stop
-        await sshService.exec(serverId, `pm2 delete "${project.name}"`);
-        await sshService.exec(serverId, "pm2 save");
+        await sshService.exec(
+          serverId,
+          `${NVM_WRAPPER}pm2 delete "${project.name}"`,
+        );
+        await sshService.exec(serverId, `${NVM_WRAPPER}pm2 save`);
       } else {
         // Kill by PID file (always try as fallback)
         await sshService.exec(
@@ -1226,9 +1282,9 @@ class DeployService {
           if (message) commitInfo.message = message;
 
           // Construct Commit URL (Github/Gitlab)
-          if (project.repoUrl.includes("github.com")) {
+          if (project.repoUrl?.includes("github.com")) {
             commitInfo.url = `${project.repoUrl.replace(/\.git$/, "")}/commit/${deployment.commitHash}`;
-          } else if (project.repoUrl.includes("gitlab.com")) {
+          } else if (project.repoUrl?.includes("gitlab.com")) {
             commitInfo.url = `${project.repoUrl.replace(/\.git$/, "")}/-/commit/${deployment.commitHash}`;
           }
         }

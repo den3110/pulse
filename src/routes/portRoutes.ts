@@ -3,6 +3,8 @@ import {
   killProcess,
   listPorts,
   getProcessDetails,
+  manageFirewall,
+  getFirewallStatus,
 } from "../controllers/portController";
 import {
   protect as authenticateToken,
@@ -19,5 +21,12 @@ router.delete(
   requireTeamRole(["admin", "editor"]),
   killProcess,
 );
+router.post(
+  "/:serverId/fw",
+  authenticateToken,
+  requireTeamRole(["admin", "editor"]),
+  manageFirewall,
+);
+router.get("/:serverId/fw", authenticateToken, getFirewallStatus);
 
 export default router;

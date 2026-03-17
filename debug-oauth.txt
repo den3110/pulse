@@ -1,0 +1,2 @@
+{"state":"gem-1772803359585021764","status":"ok","url":"https://accounts.google.com/o/oauth2/auth?access_type=offline\u0026client_id=681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com\u0026prompt=consent\u0026redirect_uri=http%3A%2F%2Flocalhost%3A8085%2Foauth2callback\u0026response_type=code\u0026scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile\u0026state=gem-1772803359585021764"}
+

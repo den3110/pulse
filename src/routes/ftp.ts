@@ -51,6 +51,16 @@ router.post(
   upload.single("file"),
   ftpController.uploadFile,
 );
+const uploadArchive = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 500 * 1024 * 1024 },
+}); // 500MB max for archives
+router.post(
+  "/:serverId/upload-archive",
+  requireTeamRole(["admin", "editor"]),
+  uploadArchive.single("file"),
+  ftpController.uploadArchive,
+);
 router.get("/:serverId/download", ftpController.downloadFile);
 router.get("/:serverId/preview", ftpController.previewFile);
 
@@ -64,6 +74,11 @@ router.post(
   "/:serverId/mkdir",
   requireTeamRole(["admin", "editor"]),
   ftpController.createDirectory,
+);
+router.post(
+  "/:serverId/batch-mkdir",
+  requireTeamRole(["admin", "editor"]),
+  ftpController.batchMkdir,
 );
 router.post(
   "/:serverId/rename",

@@ -108,6 +108,66 @@ class PortService {
       return null;
     }
   }
+
+  async getFirewallStatus(serverId: string): Promise<any> {
+    const checkCmd = `command -v ufw >/dev/null 2>&1 && ufw status numbered || echo "NOT_INSTALLED"`;
+    const result = await sshService.exec(serverId, checkCmd);
+    const stdout = result.stdout.trim();
+
+    if (stdout === "NOT_INSTALLED" || result.stderr.includes("not found")) {
+      return { installed: false, active: false, rules: [] };
+    }
+
+    const lines = stdout.split("\n").map((l) => l.trim());
+    if (lines[0].includes("Status: inactive")) {
+      return { installed: true, active: false, rules: [] };
+    }
+
+    const rules: any[] = [];
+    // Skip headers: 'Status: active', '', 'To', '--'
+    let parsingRules = false;
+    for (const line of lines) {
+      if (line.startsWith("--")) {
+        parsingRules = true;
+        continue;
+      }
+      if (parsingRules && line.startsWith("[")) {
+        // e.g. "[ 1] 8317/tcp                   ALLOW IN    Anywhere"
+        // Also might have (v6) at the end
+        const match = line.match(
+          /\[\s*(\d+)\]\s+(\S+)\s+(ALLOW OUT|ALLOW IN|DENY IN|DENY OUT|REJECT IN|REJECT OUT)\s+(.+)/,
+        );
+        if (match) {
+          rules.push({
+            id: match[1],
+            to: match[2],
+            action: match[3],
+            from: match[4],
+          });
+        }
+      }
+    }
+
+    return { installed: true, active: true, rules };
+  }
+
+  async manageFirewallRule(
+    serverId: string,
+    port: string | number,
+    protocol: "tcp" | "udp",
+    action: "allow" | "deny",
+  ): Promise<void> {
+    const cmd = `command -v ufw >/dev/null 2>&1 && ufw ${action} ${port}/${protocol} || echo "No UFW installed, cannot manage firewall"`;
+    const result = await sshService.exec(serverId, cmd);
+    if (
+      result.stdout.includes("No UFW installed") ||
+      result.stderr.includes("not found")
+    ) {
+      throw new Error(
+        "UFW is not installed or enabled on this server. Firewall management failed.",
+      );
+    }
+  }
 }
 
 export default new PortService();

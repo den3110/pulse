@@ -221,3 +221,38 @@ export const runContainer = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// POST /:serverId/compose-up — run docker compose up (SSE stream)
+export const dockerComposeUp = async (req: AuthRequest, res: Response) => {
+  const { composePath, projectName } = req.body;
+  if (!composePath) {
+    res.status(400).json({ message: "composePath is required" });
+    return;
+  }
+
+  // SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  try {
+    const result = await dockerService.dockerComposeUp(
+      req.params.serverId as string,
+      composePath,
+      (line: string) => {
+        res.write(`data: ${JSON.stringify({ line })}\n\n`);
+      },
+      projectName || undefined,
+    );
+    res.write(
+      `event: complete\ndata: ${JSON.stringify({ message: "Docker Compose up complete", containers: result.containers })}\n\n`,
+    );
+  } catch (error: any) {
+    res.write(
+      `event: error\ndata: ${JSON.stringify({ message: error.message })}\n\n`,
+    );
+  } finally {
+    res.end();
+  }
+};

@@ -12,6 +12,9 @@ router.post("/browse-folders", projectController.browseFolders);
 // Branch detection
 router.post("/detect-branch", projectController.detectBranch);
 
+// Server folder browsing (for local/non-git projects)
+router.post("/browse-server", projectController.browseServerFolders);
+
 // CRUD
 router.get("/", projectController.listProjects);
 router.put(

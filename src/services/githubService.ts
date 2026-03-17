@@ -283,15 +283,15 @@ export class GitHubService {
         if (deps.next) {
           return {
             type: "next",
-            buildCommand: "npm install && npm run build",
-            startCommand: "npm start",
+            buildCommand: "yarn install && yarn build",
+            startCommand: "yarn start",
             outputDir: ".next",
           };
         }
         if (deps["react-scripts"]) {
           return {
             type: "create-react-app",
-            buildCommand: "npm install && npm run build",
+            buildCommand: "yarn install && yarn build",
             startCommand: "serve -s build",
             outputDir: "build",
           };
@@ -299,8 +299,8 @@ export class GitHubService {
         // Default Node
         return {
           type: "node",
-          buildCommand: "npm install",
-          startCommand: "npm start",
+          buildCommand: "yarn install",
+          startCommand: "yarn start",
           outputDir: "",
         };
       }
