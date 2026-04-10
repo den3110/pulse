@@ -384,7 +384,7 @@ class SFTPService {
   }
 
   /**
-   * Rename / move a file or directory
+   * Rename / move a file or directory — uses SSH mv with sudo fallback
    */
   async rename(
     serverId: string,
@@ -392,34 +392,32 @@ class SFTPService {
     newPath: string,
     overwrite: boolean = false,
   ): Promise<void> {
-    const { sftp } = await this.getSFTP(serverId);
+    const escapedOld = oldPath.replace(/'/g, "'\\''");
+    const escapedNew = newPath.replace(/'/g, "'\\''");
 
     if (!overwrite) {
-      const exists = await new Promise<boolean>((resolve) => {
-        sftp.stat(newPath, (err) => {
-          if (err) resolve(false);
-          else resolve(true);
-        });
-      });
-      if (exists) {
+      // Check if target exists
+      const checkResult = await sshService.exec(serverId, `test -e '${escapedNew}' && echo EXISTS`);
+      if (checkResult.stdout.trim() === "EXISTS") {
         const error: any = new Error("File or folder already exists");
         error.code = "TARGET_EXISTS";
         throw error;
       }
     } else {
-      // If overwrite is true, we delete the target first to ensure sftp.rename succeeds
-      await sshService.exec(
-        serverId,
-        `rm -rf '${newPath.replace(/'/g, "'\\''")}'`,
-      );
+      // Delete target first
+      const rmResult = await sshService.exec(serverId, `rm -rf '${escapedNew}'`);
+      if (rmResult.code !== 0) {
+        await sshService.exec(serverId, `sudo rm -rf '${escapedNew}'`);
+      }
     }
 
-    return new Promise<void>((resolve, reject) => {
-      sftp.rename(oldPath, newPath, (err) => {
-        if (err) return reject(err);
-        resolve();
-      });
-    });
+    const result = await sshService.exec(serverId, `mv '${escapedOld}' '${escapedNew}'`);
+    if (result.code !== 0) {
+      const retryResult = await sshService.exec(serverId, `sudo mv '${escapedOld}' '${escapedNew}'`);
+      if (retryResult.code !== 0) {
+        throw new Error(retryResult.stderr || `Failed to rename`);
+      }
+    }
   }
 
   /**
@@ -453,23 +451,23 @@ class SFTPService {
   }
 
   /**
-   * Change file permissions
+   * Change file permissions — uses SSH chmod with sudo fallback
    */
   async chmod(serverId: string, filePath: string, mode: string): Promise<void> {
     const numericMode = parseInt(mode, 8);
     if (isNaN(numericMode)) throw new Error("Invalid permission mode");
 
-    const { sftp } = await this.getSFTP(serverId);
-
-    return new Promise<void>((resolve, reject) => {
-      sftp.chmod(filePath, numericMode, (err) => {
-        if (err) return reject(err);
-        resolve();
-      });
-    });
+    const escaped = filePath.replace(/'/g, "'\\''");
+    const result = await sshService.exec(serverId, `chmod ${mode} '${escaped}'`);
+    if (result.code !== 0) {
+      const retryResult = await sshService.exec(serverId, `sudo chmod ${mode} '${escaped}'`);
+      if (retryResult.code !== 0) {
+        throw new Error(retryResult.stderr || `Failed to change permissions`);
+      }
+    }
   }
   /**
-   * Copy file or directory
+   * Copy file or directory — with sudo fallback
    */
   async copyItem(
     serverId: string,
@@ -478,7 +476,13 @@ class SFTPService {
   ): Promise<void> {
     const src = sourcePath.replace(/'/g, "'\\''");
     const dst = destPath.replace(/'/g, "'\\''");
-    await sshService.exec(serverId, `cp -r '${src}' '${dst}'`);
+    const result = await sshService.exec(serverId, `cp -r '${src}' '${dst}'`);
+    if (result.code !== 0) {
+      const retryResult = await sshService.exec(serverId, `sudo cp -r '${src}' '${dst}'`);
+      if (retryResult.code !== 0) {
+        throw new Error(retryResult.stderr || `Failed to copy`);
+      }
+    }
   }
 
   /**
