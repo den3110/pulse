@@ -308,14 +308,15 @@ class SFTPService {
    * Delete a file
    */
   async deleteFile(serverId: string, filePath: string): Promise<void> {
-    const { sftp } = await this.getSFTP(serverId);
-
-    return new Promise<void>((resolve, reject) => {
-      sftp.unlink(filePath, (err) => {
-        if (err) return reject(err);
-        resolve();
-      });
-    });
+    const escaped = filePath.replace(/'/g, "'\\''");
+    const result = await sshService.exec(serverId, `rm -f '${escaped}'`);
+    if (result.code !== 0) {
+      // Retry with sudo
+      const retryResult = await sshService.exec(serverId, `sudo rm -f '${escaped}'`);
+      if (retryResult.code !== 0) {
+        throw new Error(retryResult.stderr || `Failed to delete file: ${filePath}`);
+      }
+    }
   }
 
   /**
@@ -323,7 +324,10 @@ class SFTPService {
    */
   async deleteDirectory(serverId: string, dirPath: string): Promise<void> {
     const escaped = dirPath.replace(/'/g, "'\\''");
-    await sshService.exec(serverId, `rm -rf '${escaped}'`);
+    const result = await sshService.exec(serverId, `rm -rf '${escaped}'`);
+    if (result.code !== 0) {
+      await sshService.exec(serverId, `sudo rm -rf '${escaped}'`);
+    }
   }
 
   /**
@@ -331,7 +335,10 @@ class SFTPService {
    */
   async deleteItems(serverId: string, paths: string[]): Promise<void> {
     const args = paths.map((p) => `'${p.replace(/'/g, "'\\''")}'`).join(" ");
-    await sshService.exec(serverId, `rm -rf ${args}`);
+    const result = await sshService.exec(serverId, `rm -rf ${args}`);
+    if (result.code !== 0) {
+      await sshService.exec(serverId, `sudo rm -rf ${args}`);
+    }
   }
 
   /**
@@ -342,7 +349,11 @@ class SFTPService {
     const escaped = dirPath.replace(/'/g, "'\\''");
     const result = await sshService.exec(serverId, `mkdir -p '${escaped}'`);
     if (result.code !== 0) {
-      throw new Error(result.stderr || `Failed to create directory: ${dirPath}`);
+      // Retry with sudo
+      const retryResult = await sshService.exec(serverId, `sudo mkdir -p '${escaped}'`);
+      if (retryResult.code !== 0) {
+        throw new Error(retryResult.stderr || `Failed to create directory: ${dirPath}`);
+      }
     }
   }
 
@@ -355,7 +366,10 @@ class SFTPService {
   ): Promise<void> {
     if (paths.length === 0) return;
     const args = paths.map((p) => `'${p.replace(/'/g, "'\\''")}'`).join(" ");
-    await sshService.exec(serverId, `mkdir -p ${args}`);
+    const result = await sshService.exec(serverId, `mkdir -p ${args}`);
+    if (result.code !== 0) {
+      await sshService.exec(serverId, `sudo mkdir -p ${args}`);
+    }
   }
 
   /**
@@ -615,7 +629,10 @@ class SFTPService {
       const command = `rm -rf ${chunk
         .map((p) => `'${p.replace(/'/g, "'\\''")}'`)
         .join(" ")}`;
-      await sshService.exec(serverId, command);
+      const result = await sshService.exec(serverId, command);
+      if (result.code !== 0) {
+        await sshService.exec(serverId, `sudo ${command}`);
+      }
     }
   }
 }
