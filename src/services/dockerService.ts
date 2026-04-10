@@ -36,6 +36,30 @@ export interface ContainerStats {
 
 class DockerService {
   /**
+   * Helper: execute a docker command, automatically prefixing with sudo
+   * if the user doesn't have direct docker access (group not yet applied).
+   */
+  private async execDocker(
+    serverId: string,
+    cmd: string,
+    timeout = 60000,
+  ) {
+    // Try without sudo first
+    const result = await sshService.exec(serverId, cmd, timeout);
+    // If permission denied, retry with sudo
+    if (
+      result.code !== 0 &&
+      (result.stderr.includes("permission denied") ||
+        result.stderr.includes("Permission denied") ||
+        result.stderr.includes("connect: permission denied"))
+    ) {
+      const sudoCmd = cmd.replace(/^docker\b/, "sudo docker");
+      return sshService.exec(serverId, sudoCmd, timeout);
+    }
+    return result;
+  }
+
+  /**
    * List all containers (running + stopped)
    */
   async listContainers(serverId: string): Promise<DockerContainer[]> {
@@ -54,7 +78,7 @@ class DockerService {
       "{{.Command}}",
     ];
     const format = fields.join(sep);
-    const { stdout, stderr, code } = await sshService.exec(
+    const { stdout, stderr, code } = await this.execDocker(
       serverId,
       `docker ps -a --format '${format}' --no-trunc 2>/dev/null`,
     );
@@ -102,7 +126,7 @@ class DockerService {
       "{{.CreatedAt}}",
     ];
     const format = fields.join(sep);
-    const { stdout } = await sshService.exec(
+    const { stdout } = await this.execDocker(
       serverId,
       `docker images --format '${format}' 2>/dev/null`,
     );
@@ -140,7 +164,7 @@ class DockerService {
         ? `docker rm -f ${containerId}`
         : `docker ${action} ${containerId}`;
 
-    const { stdout, stderr, code } = await sshService.exec(serverId, cmd);
+    const { stdout, stderr, code } = await this.execDocker(serverId, cmd);
 
     if (code !== 0) {
       throw new Error(stderr || `Failed to ${action} container`);
@@ -157,7 +181,7 @@ class DockerService {
     containerId: string,
     tail: number = 200,
   ): Promise<string> {
-    const { stdout, stderr } = await sshService.exec(
+    const { stdout, stderr } = await this.execDocker(
       serverId,
       `docker logs --tail ${tail} --timestamps ${containerId} 2>&1`,
       30000,
@@ -178,7 +202,7 @@ class DockerService {
     const format =
       '{"containerId":"{{.ID}}","name":"{{.Name}}","cpuPercent":"{{.CPUPerc}}","memUsage":"{{.MemUsage}}","memPercent":"{{.MemPerc}}","netIO":"{{.NetIO}}","blockIO":"{{.BlockIO}}","pids":"{{.PIDs}}"}';
 
-    const { stdout, code } = await sshService.exec(
+    const { stdout, code } = await this.execDocker(
       serverId,
       `docker stats --no-stream --format '${format}' ${target} 2>/dev/null`,
       15000,
@@ -204,7 +228,7 @@ class DockerService {
    * Inspect a container — returns full JSON
    */
   async inspectContainer(serverId: string, containerId: string): Promise<any> {
-    const { stdout, code, stderr } = await sshService.exec(
+    const { stdout, code, stderr } = await this.execDocker(
       serverId,
       `docker inspect ${containerId} 2>/dev/null`,
     );
@@ -225,7 +249,7 @@ class DockerService {
    * Inspect an image — returns full JSON
    */
   async inspectImage(serverId: string, imageId: string): Promise<any> {
-    const { stdout, code, stderr } = await sshService.exec(
+    const { stdout, code, stderr } = await this.execDocker(
       serverId,
       `docker image inspect ${imageId} 2>/dev/null`,
     );
@@ -251,7 +275,7 @@ class DockerService {
     onLine: (line: string) => void,
   ): Promise<void> {
     onLine(`Pulling ${image}...`);
-    const { stdout, stderr, code } = await sshService.exec(
+    const { stdout, stderr, code } = await this.execDocker(
       serverId,
       `docker pull ${image} 2>&1`,
       120000,
@@ -272,7 +296,7 @@ class DockerService {
    * Remove an image
    */
   async removeImage(serverId: string, imageId: string): Promise<string> {
-    const { stdout, stderr, code } = await sshService.exec(
+    const { stdout, stderr, code } = await this.execDocker(
       serverId,
       `docker rmi ${imageId} 2>&1`,
     );
@@ -349,7 +373,7 @@ class DockerService {
 
     cmd += ` ${config.image}`;
 
-    const { stdout, stderr, code } = await sshService.exec(serverId, cmd);
+    const { stdout, stderr, code } = await this.execDocker(serverId, cmd);
 
     if (code !== 0) {
       throw new Error(stderr || stdout || "Failed to run container");
@@ -371,7 +395,7 @@ class DockerService {
     onLine(`Running docker compose ${pFlag}up in ${composePath}...`);
 
     // Run docker compose up -d --build
-    const { stdout, stderr, code } = await sshService.exec(
+    const { stdout, stderr, code } = await this.execDocker(
       serverId,
       `cd ${composePath} && docker compose ${pFlag}up -d --build 2>&1`,
       300000, // 5 min timeout for builds
@@ -388,7 +412,7 @@ class DockerService {
     }
 
     // Get container names from the compose project
-    const psResult = await sshService.exec(
+    const psResult = await this.execDocker(
       serverId,
       `cd ${composePath} && docker compose ${pFlag}ps --format '{{.Name}}' 2>/dev/null`,
       10000,
