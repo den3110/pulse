@@ -256,3 +256,42 @@ export const dockerComposeUp = async (req: AuthRequest, res: Response) => {
     res.end();
   }
 };
+
+// GET /:serverId/install/stream — install docker (SSE stream)
+export const installDockerStream = async (req: AuthRequest, res: Response) => {
+  const serverId = req.params.serverId as string;
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  try {
+    await dockerService.installStream(
+      serverId,
+      (data: string, type: "stdout" | "stderr") => {
+        if (data.trim()) {
+          res.write(`data: ${JSON.stringify({ log: data })}\n\n`);
+        }
+      },
+      (code: number) => {
+        if (code === 0) {
+          res.write(
+            `data: ${JSON.stringify({ log: "\\n✅ Docker Installation completed successfully.", done: true })}\n\n`,
+          );
+        } else {
+          res.write(
+            `data: ${JSON.stringify({ log: "\\n❌ Docker Installation failed with exit code " + code, type: "error", done: true })}\n\n`,
+          );
+        }
+        res.end();
+      },
+    );
+  } catch (error: any) {
+    res.write(
+      `data: ${JSON.stringify({ log: "Error starting installation stream: " + error.message, type: "error", done: true })}\n\n`,
+    );
+    res.end();
+  }
+};

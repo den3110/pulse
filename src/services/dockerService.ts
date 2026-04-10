@@ -396,6 +396,61 @@ class DockerService {
 
     return { containers };
   }
+
+  /**
+   * Install Docker on the server with streaming output
+   */
+  async installStream(
+    serverId: string,
+    onData: (data: string, type: "stdout" | "stderr") => void,
+    onClose?: (code: number) => void,
+  ): Promise<void> {
+    const installScript = `
+export DEBIAN_FRONTEND=noninteractive
+
+echo "Checking if Docker is already installed..."
+if command -v docker &> /dev/null; then
+    echo "Docker is already installed."
+    docker -v
+    exit 0
+fi
+
+echo "Updating apt package index..."
+sudo apt-get update -y
+
+echo "Installing curl..."
+sudo apt-get install -y curl
+
+echo "Downloading official Docker installation script..."
+curl -fsSL https://get.docker.com -o get-docker.sh
+
+echo "Running Docker installation script..."
+sudo sh get-docker.sh
+
+echo "Starting Docker service..."
+sudo systemctl start docker || true
+
+echo "Enabling Docker service to start on boot..."
+sudo systemctl enable docker || true
+
+echo "Configuring current user for docker..."
+sudo usermod -aG docker \\$USER || true
+
+echo "Docker installation completed!"
+docker -v
+`;
+
+    const scriptPath = \`/tmp/install_docker_\${Date.now()}.sh\`;
+    const execCmd = \`cat << 'EOF' > \${scriptPath}
+\${installScript}
+EOF
+chmod +x \${scriptPath}
+bash \${scriptPath}
+rm \${scriptPath}
+\`;
+
+    return sshService.execStreamLine(serverId, execCmd, onData, onClose);
+  }
 }
 
 export default new DockerService();

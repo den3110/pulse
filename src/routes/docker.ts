@@ -38,6 +38,13 @@ router.use("/:serverId", verifyServer as any);
 // Docker info
 router.get("/:serverId/info", dockerController.getDockerInfo);
 
+// Install docker
+router.get(
+  "/:serverId/install/stream",
+  requireTeamRole(["admin", "editor"]),
+  dockerController.installDockerStream,
+);
+
 // List containers
 router.get("/:serverId/containers", dockerController.listContainers);
 
