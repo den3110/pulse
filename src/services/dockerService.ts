@@ -46,12 +46,15 @@ class DockerService {
   ) {
     // Try without sudo first
     const result = await sshService.exec(serverId, cmd, timeout);
-    // If permission denied, retry with sudo
+    // If command failed (permission denied, etc.), retry with sudo.
+    // Note: Many docker commands use 2>/dev/null which swallows stderr,
+    // so we can't reliably check stderr content. Instead, retry with sudo
+    // whenever docker fails and produces no useful stdout output.
     if (
-      result.code !== 0 &&
-      (result.stderr.includes("permission denied") ||
-        result.stderr.includes("Permission denied") ||
-        result.stderr.includes("connect: permission denied"))
+      result.code !== 0 ||
+      result.stderr.includes("permission denied") ||
+      result.stderr.includes("Permission denied") ||
+      result.stderr.includes("connect: permission denied")
     ) {
       const sudoCmd = cmd.replace(/\bdocker\b/g, "sudo docker");
       return sshService.exec(serverId, sudoCmd, timeout);
