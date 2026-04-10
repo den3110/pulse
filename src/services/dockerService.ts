@@ -53,7 +53,7 @@ class DockerService {
         result.stderr.includes("Permission denied") ||
         result.stderr.includes("connect: permission denied"))
     ) {
-      const sudoCmd = cmd.replace(/^docker\b/, "sudo docker");
+      const sudoCmd = cmd.replace(/\bdocker\b/g, "sudo docker");
       return sshService.exec(serverId, sudoCmd, timeout);
     }
     return result;
