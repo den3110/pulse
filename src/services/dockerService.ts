@@ -440,14 +440,14 @@ echo "Docker installation completed!"
 docker -v
 `;
 
-    const scriptPath = \`/tmp/install_docker_\${Date.now()}.sh\`;
-    const execCmd = \`cat << 'EOF' > \${scriptPath}
-\${installScript}
+    const scriptPath = `/tmp/install_docker_${Date.now()}.sh`;
+    const execCmd = `cat << 'EOF' > ${scriptPath}
+${installScript}
 EOF
-chmod +x \${scriptPath}
-bash \${scriptPath}
-rm \${scriptPath}
-\`;
+chmod +x ${scriptPath}
+bash ${scriptPath}
+rm ${scriptPath}
+`;
 
     return sshService.execStreamLine(serverId, execCmd, onData, onClose);
   }
