@@ -335,17 +335,15 @@ class SFTPService {
   }
 
   /**
-   * Create a directory
+   * Create a directory — uses SSH mkdir for better compatibility
+   * (SFTP mkdir can fail on some VPS with restricted SFTP subsystem)
    */
   async createDirectory(serverId: string, dirPath: string): Promise<void> {
-    const { sftp } = await this.getSFTP(serverId);
-
-    return new Promise<void>((resolve, reject) => {
-      sftp.mkdir(dirPath, (err) => {
-        if (err) return reject(err);
-        resolve();
-      });
-    });
+    const escaped = dirPath.replace(/'/g, "'\\''");
+    const result = await sshService.exec(serverId, `mkdir -p '${escaped}'`);
+    if (result.code !== 0) {
+      throw new Error(result.stderr || `Failed to create directory: ${dirPath}`);
+    }
   }
 
   /**
