@@ -284,6 +284,9 @@ class DockerService {
 
   /**
    * Check if Docker is installed + version
+   * Uses "docker --version" (client binary check) instead of "docker version"
+   * because "docker version" requires daemon access (docker group membership),
+   * which may not be available until the user fully re-logs after installation.
    */
   async getDockerInfo(
     serverId: string,
@@ -291,11 +294,13 @@ class DockerService {
     try {
       const { stdout, code } = await sshService.exec(
         serverId,
-        "docker version --format '{{.Server.Version}}' 2>/dev/null",
+        "docker --version 2>/dev/null",
         10000,
       );
-      if (code !== 0) return { installed: false };
-      return { installed: true, version: stdout.trim() };
+      if (code !== 0 || !stdout.trim()) return { installed: false };
+      // Parse version from "Docker version 24.0.7, build afdd53b"
+      const match = stdout.match(/Docker version ([^\s,]+)/);
+      return { installed: true, version: match ? match[1] : stdout.trim() };
     } catch {
       return { installed: false };
     }
