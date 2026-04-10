@@ -241,43 +241,54 @@ class SFTPService {
   }
 
   /**
-   * Write content to a file
+   * Write content to a file — uses SSH tee with sudo fallback
    */
   async writeFile(
     serverId: string,
     filePath: string,
     content: string,
   ): Promise<void> {
-    const { sftp } = await this.getSFTP(serverId);
-
-    return new Promise<void>((resolve, reject) => {
-      const stream = sftp.createWriteStream(filePath);
-      stream.on("close", () => resolve());
-      stream.on("error", reject);
-      stream.end(Buffer.from(content, "utf-8"));
-    });
+    const escaped = filePath.replace(/'/g, "'\\''");
+    // Use heredoc to write content via SSH
+    const base64Content = Buffer.from(content, "utf-8").toString("base64");
+    const cmd = `echo '${base64Content}' | base64 -d > '${escaped}'`;
+    const result = await sshService.exec(serverId, cmd);
+    if (result.code !== 0) {
+      // Retry with sudo tee
+      const sudoCmd = `echo '${base64Content}' | base64 -d | sudo tee '${escaped}' > /dev/null`;
+      const retryResult = await sshService.exec(serverId, sudoCmd);
+      if (retryResult.code !== 0) {
+        throw new Error(retryResult.stderr || `Failed to write file: ${filePath}`);
+      }
+    }
   }
 
   /**
-   * Upload a file from buffer
+   * Upload a file from buffer — tries SFTP first, falls back to SSH base64
    */
   async uploadFile(
     serverId: string,
     filePath: string,
     buffer: Buffer,
   ): Promise<void> {
-    const { sftp } = await this.getSFTP(serverId);
-
-    return new Promise<void>((resolve, reject) => {
-      const stream = sftp.createWriteStream(filePath);
-      stream.on("close", () => resolve());
-      stream.on("error", (err: any) => {
-        reject(
-          new Error(err.message || `Failed to upload file to ${filePath}`),
-        );
+    try {
+      const { sftp } = await this.getSFTP(serverId);
+      await new Promise<void>((resolve, reject) => {
+        const stream = sftp.createWriteStream(filePath);
+        stream.on("close", () => resolve());
+        stream.on("error", (err: any) => reject(err));
+        stream.end(buffer);
       });
-      stream.end(buffer);
-    });
+    } catch {
+      // Fallback: write via SSH base64 + sudo tee
+      const escaped = filePath.replace(/'/g, "'\\''");
+      const base64Content = buffer.toString("base64");
+      const cmd = `echo '${base64Content}' | base64 -d | sudo tee '${escaped}' > /dev/null`;
+      const result = await sshService.exec(serverId, cmd, 120000);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || `Failed to upload file to ${filePath}`);
+      }
+    }
   }
 
   /**
