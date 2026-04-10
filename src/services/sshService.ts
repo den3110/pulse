@@ -83,7 +83,7 @@ class SSHService {
   /**
    * Close a pooled connection
    */
-  private closeConnection(serverId: string): void {
+  public closeConnection(serverId: string): void {
     const entry = this.pool.get(serverId);
     if (entry) {
       clearTimeout(entry.timer);
@@ -91,6 +91,7 @@ class SSHService {
       this.pool.delete(serverId);
     }
   }
+
   /**
    * Create SSH connection config from server document
    */

@@ -449,7 +449,16 @@ bash ${scriptPath}
 rm ${scriptPath}
 `;
 
-    return sshService.execStreamLine(serverId, execCmd, onData, onClose);
+    const customOnClose = (code: number) => {
+      // Clear the cached SSH connection so that subsequent commands
+      // pick up the new 'docker' group permissions for the user.
+      if (code === 0) {
+        sshService.closeConnection(serverId);
+      }
+      if (onClose) onClose(code);
+    };
+
+    return sshService.execStreamLine(serverId, execCmd, onData, customOnClose);
   }
 }
 
